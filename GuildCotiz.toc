@@ -1,0 +1,11 @@
+## Interface: 120007
+## Title: Guild Cotiz
+## Notes: Suivi des cotisations de guilde (contributions au coffre) semaine par semaine, avec export CSV.
+## Author: Damien
+## Version: 1.0.0
+## SavedVariables: GuildCotizDB
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
+
+Core.lua
+Export.lua
+UI.lua
