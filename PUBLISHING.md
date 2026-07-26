@@ -38,6 +38,7 @@ Main features:
 - Per-player weekly breakdown with amount due, deposits and cumulative balance.
 - Clear current, ahead and behind statuses.
 - CSV exports compatible with Excel and Google Sheets.
+- Automatic French or English localization based on the WoW client language.
 - Local SavedVariables storage with no external data transmission.
 
 Important: World of Warcraft exposes only a limited number of recent guild bank

@@ -3,6 +3,7 @@
 -- accumulation des depots par joueur, calcul du statut "a jour" semaine par semaine.
 
 local ADDON, ns = ...
+local L = ns.L
 
 --------------------------------------------------------------------------------
 -- Constantes
@@ -16,10 +17,10 @@ ns.COPPER_PER_GOLD = COPPER_PER_GOLD
 -- Types de transaction correspondant a une SORTIE d'or du coffre.
 -- Ils ne comptent JAMAIS comme cotisation : ils alimentent l'onglet Retraits.
 ns.WITHDRAW_TYPES = {
-  withdraw       = "Retrait",
-  repair         = "Reparations",
-  withdrawForTab = "Achat onglet",
-  buyTab         = "Achat onglet",
+  withdraw       = L("WITHDRAW"),
+  repair         = L("REPAIR"),
+  withdrawForTab = L("TAB_PURCHASE"),
+  buyTab         = L("TAB_PURCHASE"),
 }
 
 --------------------------------------------------------------------------------
@@ -51,18 +52,20 @@ function ns.FormatMoney(copper)
   local s = math.floor((copper % COPPER_PER_GOLD) / 100)
   local c = copper % 100
   if g > 0 then
-    return string.format("%s%s|cffffd700po|r %d|cffc7c7cfpa|r %d|cffeda55fpc|r", sign, BreakUpLargeNumbers(g), s, c)
+    return string.format("%s%s|cffffd700%s|r %d|cffc7c7cf%s|r %d|cffeda55f%s|r",
+      sign, BreakUpLargeNumbers(g), L("GOLD_SHORT"), s, L("SILVER_SHORT"), c, L("COPPER_SHORT"))
   elseif s > 0 then
-    return string.format("%s%d|cffc7c7cfpa|r %d|cffeda55fpc|r", sign, s, c)
+    return string.format("%s%d|cffc7c7cf%s|r %d|cffeda55f%s|r",
+      sign, s, L("SILVER_SHORT"), c, L("COPPER_SHORT"))
   else
-    return string.format("%s%d|cffeda55fpc|r", sign, c)
+    return string.format("%s%d|cffeda55f%s|r", sign, c, L("COPPER_SHORT"))
   end
 end
 
 -- Formatage court en or entier "1 234 po"
 function ns.FormatGold(copper)
   local g = math.floor((copper or 0) / COPPER_PER_GOLD)
-  return BreakUpLargeNumbers(g) .. " po"
+  return BreakUpLargeNumbers(g) .. " " .. L("GOLD_SHORT")
 end
 
 -- Timestamp du lundi 00h00 de la semaine ISO contenant t
@@ -241,10 +244,10 @@ end
 -- Lit le journal d'or (le coffre doit etre ouvert). Renvoie le nb de nouveaux depots.
 function ns.ScanBankLog()
   if not GetNumGuildBankMoneyTransactions or not GetGuildBankMoneyTransaction then
-    return 0, "API du coffre indisponible sur cette version de WoW."
+    return 0, L("BANK_API_UNAVAILABLE")
   end
   local g = ns.GetGuildDB(true)
-  if not g then return 0, "Tu n'es pas dans une guilde." end
+  if not g then return 0, L("NOT_IN_GUILD") end
 
   local now = time()
   local count = GetNumGuildBankMoneyTransactions()
@@ -549,8 +552,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
     -- ce qui capte aussi un depot fait pendant que le coffre est deja ouvert
     local added, _, addedW = ns.ScanBankLog()
     if (added or 0) > 0 or (addedW or 0) > 0 then
-      print(string.format("|cff33ff99GuildCotiz|r : %d depot(s) et %d retrait(s) enregistre(s).",
-        added or 0, addedW or 0))
+      print("|cff33ff99GuildCotiz|r : " .. L("BANK_SCAN_RESULT", added or 0, addedW or 0))
     end
   end
 end)
@@ -562,17 +564,17 @@ ns.eventFrame = f
 --------------------------------------------------------------------------------
 function ns.DebugDump()
   local p = function(...) print("|cff33ff99GuildCotiz|r " .. string.format(...)) end
-  p("=== DIAGNOSTIC ===")
-  p("Dans une guilde : %s | cle : %s", tostring(IsInGuild()), tostring(ns.GetGuildKey()))
-  p("API GetNumGuildBankMoneyTransactions : %s", tostring(GetNumGuildBankMoneyTransactions ~= nil))
-  p("API GetGuildBankMoneyTransaction : %s", tostring(GetGuildBankMoneyTransaction ~= nil))
+  p(L("DEBUG_START"))
+  p(L("DEBUG_GUILD"), tostring(IsInGuild()), tostring(ns.GetGuildKey()))
+  p(L("DEBUG_API_COUNT"), tostring(GetNumGuildBankMoneyTransactions ~= nil))
+  p(L("DEBUG_API_TRANSACTION"), tostring(GetGuildBankMoneyTransaction ~= nil))
 
   if GetNumGuildBankMoneyTransactions then
     local n = GetNumGuildBankMoneyTransactions()
-    p("Transactions dans le journal : %d (0 = coffre ferme ou journal non charge)", n or 0)
+    p(L("DEBUG_TRANSACTIONS"), n or 0)
     for i = 1, math.min(n or 0, 8) do
       local t, name, amount, y, mo, d, h = GetGuildBankMoneyTransaction(i)
-      p("  #%d type=%s nom=%s montant=%s il y a %sa %sm %sj %sh",
+      p(L("DEBUG_TRANSACTION_LINE"),
         i, tostring(t), tostring(name), tostring(amount),
         tostring(y), tostring(mo), tostring(d), tostring(h))
     end
@@ -585,24 +587,25 @@ function ns.DebugDump()
       nm = nm + 1
       nd = nd + #m.deposits
     end
-    p("Membres connus : %d | depots enregistres (total) : %d", nm, nd)
-    p("Debut de suivi : %s | cotisation : %s/raid",
+    p(L("DEBUG_MEMBERS"), nm, nd)
+    p(L("DEBUG_CONFIG"),
       g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "?",
       ns.FormatGold(g.config.raidAmount))
     -- detail du joueur courant
     local me = ns.ShortName(UnitName("player"))
     local mine = g.members[me]
     if mine then
-      p("Toi (%s) : %d depot(s), total (depuis debut) %s",
+      p(L("DEBUG_SELF"),
         me, #mine.deposits, ns.FormatGold(ns.TotalPaid(g, mine)))
       for _, d in ipairs(mine.deposits) do
-        p("   depot %s le %s (%s le debut)",
+        p(L("DEBUG_DEPOSIT"),
           ns.FormatGold(d.a), date("%Y-%m-%d %H:%M", d.t),
-          (g.config.seasonStart and d.t >= g.config.seasonStart) and "APRES" or "AVANT")
+          (g.config.seasonStart and d.t >= g.config.seasonStart)
+            and L("DEBUG_AFTER") or L("DEBUG_BEFORE"))
       end
     else
-      p("Toi (%s) : aucun enregistrement", me)
+      p(L("DEBUG_NO_SELF"), me)
     end
   end
-  p("=== FIN ===")
+  p(L("DEBUG_END"))
 end
