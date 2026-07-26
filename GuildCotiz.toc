@@ -1,10 +1,13 @@
 ## Interface: 120007
 ## Title: Guild Cotiz
-## Notes: Suivi des cotisations de guilde (contributions au coffre) semaine par semaine, avec export CSV.
+## Notes: Track guild raid contributions, deposits and withdrawals with CSV export.
 ## Author: Damien
 ## Version: 1.0.0
 ## SavedVariables: GuildCotizDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
+## X-Website: https://github.com/dde2a/GuildCotiz
+## X-Category: Guild
+## X-Curse-Project-ID: 1625909
 
 Core.lua
 Export.lua

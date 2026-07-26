@@ -1,0 +1,8 @@
+package-as: GuildCotiz
+
+manual-changelog: CHANGELOG.md
+
+ignore:
+  - .github
+  - assets
+  - PUBLISHING.md
