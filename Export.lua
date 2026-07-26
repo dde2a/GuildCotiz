@@ -56,24 +56,26 @@ function ns.BuildSummaryCSV()
   lines[#lines + 1] = table.concat(htxt, sep)
 
   for _, entry in ipairs(ns.GetSortedMembers(g, { includeInactive = true })) do
-    local m = entry.m
-    local s = ns.GetMemberStatus(g, m, entry.name, now)
-    local row = {
-      entry.name,
-      m.rankName or "",
-      DateStr(s.startT),
-      s.raids,
-      GoldNum(s.paid),
-      GoldNum(s.owed),
-      GoldNum(s.balance),
-      StatusText(s.status),
-      s.raidsBehind,
-      s.raidsAhead,
-      GoldNum(s.due),
-    }
-    local rtxt = {}
-    for _, v in ipairs(row) do rtxt[#rtxt + 1] = CSVCell(v, sep) end
-    lines[#lines + 1] = table.concat(rtxt, sep)
+    if not ns.IsAlt(g, entry.name) then
+      local m = entry.m
+      local s = ns.GetMemberStatus(g, m, entry.name, now)
+      local row = {
+        entry.name,
+        m.rankName or "",
+        DateStr(s.startT),
+        s.raids,
+        GoldNum(s.paid),
+        GoldNum(s.owed),
+        GoldNum(s.balance),
+        StatusText(s.status),
+        s.raidsBehind,
+        s.raidsAhead,
+        GoldNum(s.due),
+      }
+      local rtxt = {}
+      for _, v in ipairs(row) do rtxt[#rtxt + 1] = CSVCell(v, sep) end
+      lines[#lines + 1] = table.concat(rtxt, sep)
+    end
   end
 
   return table.concat(lines, "\n")
@@ -92,7 +94,7 @@ function ns.BuildWeeklyCSV(onlyPlayer)
   local header = {
     L("CSV_PLAYER"), L("CSV_WEEK_NUMBER"), L("CSV_YEAR"), L("CSV_ISO_WEEK"),
     L("CSV_WEEK_START"), L("CSV_WEEK_END"), L("CSV_RAIDS"), L("CSV_WEEK_DUE"),
-    L("CSV_DEPOSITED"), L("CSV_CUMULATIVE_RAIDS"), L("CSV_CUMULATIVE_DUE"),
+    L("CSV_DEPOSITED"), L("CSV_DEPOSIT_SOURCE"), L("CSV_CUMULATIVE_RAIDS"), L("CSV_CUMULATIVE_DUE"),
     L("CSV_CUMULATIVE_PAID"), L("CSV_END_BALANCE"), L("CSV_STATUS"),
   }
   local htxt = {}
@@ -100,7 +102,8 @@ function ns.BuildWeeklyCSV(onlyPlayer)
   lines[#lines + 1] = table.concat(htxt, sep)
 
   for _, entry in ipairs(ns.GetSortedMembers(g, { includeInactive = true })) do
-    if not onlyPlayer or entry.name:lower() == onlyPlayer:lower() then
+    if not ns.IsAlt(g, entry.name)
+      and (not onlyPlayer or entry.name:lower() == ns.ResolveMain(g, onlyPlayer):lower()) then
       local rows = ns.GetWeeklyBreakdown(g, entry.m, entry.name, now)
       for _, r in ipairs(rows) do
         local isoYear, isoWeek = ns.ISOWeek(r.weekStart)
@@ -108,6 +111,7 @@ function ns.BuildWeeklyCSV(onlyPlayer)
           entry.name, r.index, isoYear, isoWeek,
           DateStr(r.weekStart), DateStr(r.weekEnd - 1),
           r.raids, GoldNum(r.dueWeek), GoldNum(r.deposited),
+          r.depositOverridden and L("SOURCE_MANUAL") or L("SOURCE_BANK"),
           r.cumRaids, GoldNum(r.cumOwed), GoldNum(r.cumPaid),
           GoldNum(r.balanceEnd), StatusText(r.status),
         }
@@ -152,6 +156,35 @@ function ns.BuildWithdrawCSV(onlyPlayer)
     end
   end
 
+  return table.concat(lines, "\n")
+end
+
+--------------------------------------------------------------------------------
+-- Historique lisible des transactions originales d'un main et de ses rerolls
+--------------------------------------------------------------------------------
+function ns.BuildDepositHistoryCSV(mainName)
+  local g = ns.GetGuildDB(true)
+  if not g or not mainName then return "" end
+  mainName = ns.ResolveMain(g, mainName)
+  local sep = GuildCotizDB.settings.csvSeparator or ";"
+  local lines = {
+    table.concat({
+      CSVCell(L("CSV_PLAYER"), sep),
+      CSVCell(L("CSV_DATE"), sep),
+      CSVCell(L("CSV_TIME"), sep),
+      CSVCell(L("CSV_AMOUNT"), sep),
+    }, sep),
+  }
+  local transactions = ns.GetDepositTransactionsForGroup(g, mainName)
+  if #transactions == 0 then return L("NO_DEPOSIT_HISTORY") end
+  for _, tx in ipairs(transactions) do
+    lines[#lines + 1] = table.concat({
+      CSVCell(tx.name, sep),
+      CSVCell(date("%Y-%m-%d", tx.t), sep),
+      CSVCell(date("%H:%M", tx.t), sep),
+      CSVCell(GoldNum(tx.a), sep),
+    }, sep)
+  end
   return table.concat(lines, "\n")
 end
 

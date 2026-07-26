@@ -127,6 +127,8 @@ function ns.GetGuildDB(create)
   if not g then return nil end
 
   g.raids = g.raids or {}
+  g.altToMain = g.altToMain or {}
+  g.groupDepositOverrides = g.groupDepositOverrides or {}
   if g.config then
     -- migration : l'ancienne cotisation hebdomadaire devient la cotisation par raid
     if g.config.raidAmount == nil then
@@ -184,13 +186,77 @@ end
 local function EnsureMember(g, shortName)
   local m = g.members[shortName]
   if not m then
-    m = { rankName = "?", rankIndex = 99, note = "", startOverride = nil, active = false }
+    m = { rankName = "?", rankIndex = 99, note = "", officerNote = "", startOverride = nil, active = false }
     g.members[shortName] = m
   end
   -- init paresseuse (compatibilite avec les donnees enregistrees avant les retraits)
   m.deposits = m.deposits or {}
   m.withdrawals = m.withdrawals or {}
+  m.depositOverrides = m.depositOverrides or {}
+  m.officerNote = m.officerNote or ""
   return m
+end
+
+--------------------------------------------------------------------------------
+-- Associations personnages principaux / rerolls
+--------------------------------------------------------------------------------
+
+-- Renvoie le main final d'un personnage. La protection visited evite toute boucle.
+function ns.ResolveMain(g, name)
+  if not g or not name then return name end
+  g.altToMain = g.altToMain or {}
+  local current = name
+  local visited = {}
+  while g.altToMain[current] and not visited[current] do
+    visited[current] = true
+    current = g.altToMain[current]
+  end
+  return current
+end
+
+function ns.IsAlt(g, name)
+  return ns.ResolveMain(g, name) ~= name
+end
+
+-- Associe un reroll a un main. mainName=nil retire l'association.
+function ns.SetCharacterMain(g, altName, mainName)
+  if not g or not altName then return false, "invalid" end
+  g.altToMain = g.altToMain or {}
+  if not mainName or mainName == "" then
+    g.altToMain[altName] = nil
+    return true
+  end
+  if altName == mainName then return false, "same" end
+
+  -- Le main choisi est toujours ramene a son propre main final.
+  local resolvedMain = ns.ResolveMain(g, mainName)
+  if resolvedMain == altName then return false, "cycle" end
+  g.altToMain[altName] = resolvedMain
+  return true
+end
+
+-- Tous les personnages rattaches a un main, main compris.
+function ns.GetLinkedCharacters(g, mainName)
+  mainName = ns.ResolveMain(g, mainName)
+  local list = {}
+  for name, m in pairs(g.members or {}) do
+    if ns.ResolveMain(g, name) == mainName then
+      list[#list + 1] = { name = name, m = m, isMain = (name == mainName) }
+    end
+  end
+  table.sort(list, function(a, b)
+    if a.isMain ~= b.isMain then return a.isMain end
+    return a.name:lower() < b.name:lower()
+  end)
+  return list
+end
+
+function ns.GetAltCount(g, mainName)
+  local count = 0
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    if not entry.isMain then count = count + 1 end
+  end
+  return count
 end
 ns.EnsureMember = EnsureMember
 
@@ -210,13 +276,14 @@ function ns.ScanRoster()
   -- marque tout le monde inactif, puis re-active les presents
   for _, m in pairs(g.members) do m.active = false end
   for i = 1, num do
-    local name, rankName, rankIndex, _, _, _, note = GetGuildRosterInfo(i)
+    local name, rankName, rankIndex, _, _, _, note, officerNote = GetGuildRosterInfo(i)
     if name then
       local short = ns.ShortName(name)
       local m = EnsureMember(g, short)
       m.rankName = rankName or m.rankName
       m.rankIndex = rankIndex or m.rankIndex
       if note and note ~= "" then m.note = note end
+      if officerNote and officerNote ~= "" then m.officerNote = officerNote end
       m.active = true
     end
   end
@@ -349,17 +416,135 @@ function ns.WeeksElapsed(startT, now)
   return math.floor((now - startT) / WEEK_SECONDS) + 1
 end
 
--- Total depose par un membre depuis son debut de suivi.
--- untilT : si fourni, ne compte que les depots effectues jusqu'a cette date (vue historique).
-function ns.TotalPaid(g, m, untilT)
-  local startT = ns.MemberStart(g, m)
+-- Total brut detecte dans le journal pour une semaine.
+function ns.GetBankDepositedForWeek(m, weekTs, startT, untilT)
+  local weekEnd = weekTs + WEEK_SECONDS
   local total = 0
-  for _, d in ipairs(m.deposits) do
-    if (not startT or d.t >= startT) and (not untilT or d.t <= untilT) then
+  for _, d in ipairs(m.deposits or {}) do
+    if d.t >= weekTs and d.t < weekEnd
+      and (not startT or d.t >= startT)
+      and (not untilT or d.t <= untilT) then
       total = total + d.a
     end
   end
   return total
+end
+
+-- Montant effectif d'une semaine : correction manuelle si presente, sinon journal.
+function ns.GetDepositedForWeek(m, weekTs, startT, untilT)
+  m.depositOverrides = m.depositOverrides or {}
+  local override = m.depositOverrides[weekTs]
+  if override ~= nil then return override, true end
+  return ns.GetBankDepositedForWeek(m, weekTs, startT, untilT), false
+end
+
+-- Definit une correction en cuivre. nil restaure la valeur issue du journal.
+function ns.SetDepositOverride(m, weekTs, copper)
+  m.depositOverrides = m.depositOverrides or {}
+  if copper == nil then
+    m.depositOverrides[weekTs] = nil
+  else
+    m.depositOverrides[weekTs] = math.max(0, math.floor(tonumber(copper) or 0))
+  end
+end
+
+-- Total depose par un membre depuis son debut de suivi, corrections comprises.
+-- untilT : si fourni, ne compte que les depots effectues jusqu'a cette date (vue historique).
+function ns.TotalPaid(g, m, untilT)
+  local startT = ns.MemberStart(g, m)
+  local total = 0
+  for _, d in ipairs(m.deposits or {}) do
+    if (not startT or d.t >= startT) and (not untilT or d.t <= untilT) then
+      total = total + d.a
+    end
+  end
+
+  -- Une correction remplace le total brut de sa semaine, elle ne s'y ajoute pas.
+  for weekTs, override in pairs(m.depositOverrides or {}) do
+    local weekEnd = weekTs + WEEK_SECONDS
+    if (not startT or weekEnd > startT) and (not untilT or weekTs <= untilT) then
+      local raw = ns.GetBankDepositedForWeek(m, weekTs, startT, untilT)
+      total = total - raw + override
+    end
+  end
+  return total
+end
+
+-- Total cumule du main et de tous ses rerolls.
+function ns.TotalPaidForGroup(g, mainName, untilT)
+  mainName = ns.ResolveMain(g, mainName)
+  local total = 0
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    total = total + ns.TotalPaid(g, entry.m, untilT)
+  end
+
+  -- Une correction de groupe remplace le cumul main+rerolls de la semaine.
+  local overrides = g.groupDepositOverrides and g.groupDepositOverrides[mainName]
+  for weekTs, override in pairs(overrides or {}) do
+    if not untilT or weekTs <= untilT then
+      local raw = 0
+      for _, detail in ipairs(ns.GetGroupDepositsForWeek(g, mainName, weekTs, untilT)) do
+        raw = raw + detail.amount
+      end
+      total = total - raw + override
+    end
+  end
+  return total
+end
+
+function ns.GetGroupDepositOverride(g, mainName, weekTs)
+  mainName = ns.ResolveMain(g, mainName)
+  local byMain = g.groupDepositOverrides and g.groupDepositOverrides[mainName]
+  if byMain and byMain[weekTs] ~= nil then return byMain[weekTs], true end
+  return nil, false
+end
+
+function ns.SetGroupDepositOverride(g, mainName, weekTs, copper)
+  mainName = ns.ResolveMain(g, mainName)
+  g.groupDepositOverrides = g.groupDepositOverrides or {}
+  g.groupDepositOverrides[mainName] = g.groupDepositOverrides[mainName] or {}
+  if copper == nil then
+    g.groupDepositOverrides[mainName][weekTs] = nil
+    if next(g.groupDepositOverrides[mainName]) == nil then
+      g.groupDepositOverrides[mainName] = nil
+    end
+  else
+    g.groupDepositOverrides[mainName][weekTs] = math.max(0, math.floor(tonumber(copper) or 0))
+  end
+end
+
+-- Detail des depots par personnage pour une semaine.
+function ns.GetGroupDepositsForWeek(g, mainName, weekTs, untilT)
+  local rows = {}
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    local startT = ns.MemberStart(g, entry.m)
+    local amount, overridden = ns.GetDepositedForWeek(entry.m, weekTs, startT, untilT)
+    rows[#rows + 1] = {
+      name = entry.name,
+      m = entry.m,
+      amount = amount,
+      overridden = overridden,
+      isMain = entry.isMain,
+    }
+  end
+  return rows
+end
+
+-- Transactions originales, conservees meme lorsqu'une correction manuelle existe.
+function ns.GetDepositTransactionsForGroup(g, mainName)
+  local rows = {}
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    for _, deposit in ipairs(entry.m.deposits or {}) do
+      rows[#rows + 1] = {
+        name = entry.name,
+        mainName = ns.ResolveMain(g, entry.name),
+        t = deposit.t,
+        a = deposit.a,
+      }
+    end
+  end
+  table.sort(rows, function(a, b) return a.t > b.t end)
+  return rows
 end
 
 -- Liste a plat de tous les retraits, du plus recent au plus ancien.
@@ -401,10 +586,12 @@ end
 function ns.GetMemberStatus(g, m, name, now)
   now = now or time()
   local perRaid = g.config.raidAmount or 0
+  name = ns.ResolveMain(g, name)
+  m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
   local raids = ns.TotalRaids(g, name, now)
   local owed = raids * perRaid
-  local paid = ns.TotalPaid(g, m, now)
+  local paid = ns.TotalPaidForGroup(g, name, now)
   local balance = paid - owed
   local raidsCovered = (perRaid > 0) and math.floor(paid / perRaid) or 0
 
@@ -442,6 +629,8 @@ end
 function ns.GetWeeklyBreakdown(g, m, name, now)
   now = now or time()
   local perRaid = g.config.raidAmount or 0
+  name = ns.ResolveMain(g, name)
+  m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
   local rows = {}
   if not startT then return rows end
@@ -459,11 +648,16 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
     local raids = ns.GetRaids(g, ws, name)
     local dueWeek = raids * perRaid
 
-    local deposited = 0
-    for _, d in ipairs(m.deposits) do
-      if d.t >= ws and d.t < we and d.t >= startT then
-        deposited = deposited + d.a
-      end
+    local deposited, depositOverridden = 0, false
+    local depositDetails = ns.GetGroupDepositsForWeek(g, name, ws, now)
+    for _, detail in ipairs(depositDetails) do
+      deposited = deposited + detail.amount
+      if detail.overridden then depositOverridden = true end
+    end
+    local groupOverride, hasGroupOverride = ns.GetGroupDepositOverride(g, name, ws)
+    if hasGroupOverride then
+      deposited = groupOverride
+      depositOverridden = true
     end
 
     cumRaids = cumRaids + raids
@@ -483,6 +677,8 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
     rows[#rows + 1] = {
       index = index, weekStart = ws, weekEnd = we,
       raids = raids, dueWeek = dueWeek, deposited = deposited,
+      depositOverridden = depositOverridden,
+      depositDetails = depositDetails,
       cumRaids = cumRaids, cumOwed = cumOwed, cumPaid = cumPaid,
       balanceEnd = balanceEnd, status = st,
     }
