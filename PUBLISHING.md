@@ -86,10 +86,15 @@ Hide the chat window or any personal information that should not be public.
 
 ## Platform identifiers
 
-After creating both project pages, add these lines to `GuildCotiz.toc`:
+The CurseForge project is already connected:
 
 ```toc
-## X-Curse-Project-ID: <CurseForge numeric project ID>
+## X-Curse-Project-ID: 1625909
+```
+
+After creating the Wago project page, add:
+
+```toc
 ## X-Wago-ID: <Wago eight-character project ID>
 ```
 
