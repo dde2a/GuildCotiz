@@ -1,58 +1,72 @@
-# Guild Cotiz
+# GuildCotiz
 
-Addon WoW (Retail — The War Within) pour suivre les **cotisations de guilde** : qui dépose au coffre, combien, semaine par semaine, et **qui n'est plus à jour**.
+GuildCotiz is a World of Warcraft Retail addon for tracking guild raid
+contributions from the guild bank.
 
-## Principe (modèle « solde cumulé »)
+Instead of charging every guild member once per week, GuildCotiz lets officers
+enter how many raid nights each player attended during a selected week. The
+amount owed is calculated from the configured contribution per raid.
 
-- Tu définis une **cotisation hebdomadaire attendue** (ex. 100 po/semaine).
-- L'addon lit le **journal d'or du coffre de guilde** et additionne les dépôts de chaque membre.
-- Un joueur peut déposer **un gros montant d'un coup** : il couvre alors plusieurs semaines d'avance.
-- L'addon calcule pour chaque membre :
-  - le **total déposé**,
-  - le nombre de **semaines écoulées** depuis le début du suivi,
-  - le **solde** (payé − dû),
-  - jusqu'à quelle date il est **couvert**,
-  - et s'il est **en retard** (de combien de semaines / combien d'or il manque).
+## Features
+
+- Configurable contribution amount per raid.
+- Manual raid attendance entry for each player and week.
+- Bulk attendance entry for the currently displayed players.
+- Filters by player name and guild rank.
+- Historical weekly view using ISO week numbers.
+- Automatic scanning of guild bank gold deposits.
+- Separate withdrawal history for officers.
+- Running balance showing whether a player is current, ahead or behind.
+- Weekly player details with deposits, amount owed and cumulative balance.
+- CSV exports for Excel and Google Sheets.
+- All information remains stored locally in WoW SavedVariables.
+
+## How it works
+
+```text
+Amount owed = raids attended × contribution per raid
+Balance     = total deposited − amount owed
+```
+
+A larger deposit can cover several future raids. A player who did not raid
+does not owe anything for that week.
 
 ## Installation
 
-1. Copie le dossier `GuildCotiz` dans :
-   `World of Warcraft\_retail_\Interface\AddOns\`
-   → tu dois obtenir `...\Interface\AddOns\GuildCotiz\GuildCotiz.toc`
-2. Relance WoW (ou `/reload`).
-3. Sur l'écran de sélection des personnages, coche **« Afficher les extensions obsolètes »** si l'addon n'apparaît pas (le numéro d'interface du `.toc` peut être à mettre à jour selon le patch).
+1. Download and extract the release archive.
+2. Copy the `GuildCotiz` folder into:
+   `World of Warcraft/_retail_/Interface/AddOns/`
+3. Restart World of Warcraft or run `/reload`.
+4. Open the addon with `/cotiz` or `/gc`.
 
-## Utilisation
+## Usage
 
-- `/cotiz` ou `/gc` : ouvre la fenêtre.
-- **Régler la cotisation** : bouton *Montant hebdo* (ou `/cotiz set 100`).
-- **Régler le début du suivi** : bouton *Début de suivi* (ou `/cotiz start 2026-07-01`). Par défaut = aujourd'hui au 1er lancement.
-- **Enregistrer les dépôts** : ouvre le **coffre de guilde** en jeu → l'addon scanne automatiquement le journal d'or et enregistre les nouveaux dépôts. (Bouton *Scanner le coffre* / `/cotiz scan` pour forcer, coffre ouvert.)
-- **Vue Résumé** : tous les membres avec leur statut. Clique un joueur pour voir son détail.
-- **Vue Détail par semaine** : semaine par semaine pour un joueur (tape son nom dans le champ *Joueur* puis Entrée). Les semaines **non payées** apparaissent en rouge, les semaines **couvertes par une avance** en bleu.
-- **Filtrer** : champ *Joueur* en haut.
+1. Set the amount due per raid with **Amount / raid** or `/cotiz set 1000`.
+2. Open the guild bank regularly so GuildCotiz can scan its limited transaction
+   history.
+3. Select a week in the summary view.
+4. Enter each player's raid count, or filter by rank and use
+   **Apply to all** before correcting absences.
+5. Click a player to inspect their weekly history.
+6. Use the export buttons to copy CSV data into Excel or Google Sheets.
 
-## Export CSV (vers Excel / Google Sheets)
+## Important limitations
 
-- Bouton **Export résumé** : un tableau par joueur (total, solde, statut, date de couverture…).
-- Bouton **Export semaine** : le détail semaine par semaine (du joueur affiché en vue Détail, sinon tous).
-- Une fenêtre s'ouvre avec le texte CSV : **Ctrl+A** (tout sélectionner) puis **Ctrl+C**, et **colle** dans Excel ou Google Sheets.
-- Séparateur `;` (adapté à Excel FR). Les montants sont en **or** avec 2 décimales.
+- WoW only exposes a limited number of recent guild bank transactions. Open the
+  guild bank frequently so deposits and withdrawals are recorded before they
+  disappear from the journal.
+- The character scanning the bank must have permission to view its money log.
+- Attendance is intentionally entered manually; the addon does not infer raid
+  attendance from group composition.
+- SavedVariables are local and are not synchronized between officers.
 
-> Les données sont aussi sauvegardées automatiquement par WoW dans
-> `WTF\Account\<compte>\SavedVariables\GuildCotizDB.lua` (format Lua, utile en secours).
+## Privacy
 
-## Points de vigilance
+GuildCotiz does not transmit data. Guild names, character names, deposits,
+withdrawals and attendance remain in:
 
-- **Le journal d'or du coffre est limité** : WoW ne conserve qu'un nombre restreint de transactions récentes. Pour ne rien manquer, **ouvre le coffre régulièrement** (idéalement chaque semaine). L'addon dédoublonne les dépôts déjà enregistrés, donc rouvrir le coffre ne crée pas de doublons.
-- Seuls les **dépôts d'or** sont comptés comme cotisation (pas les retraits ni les objets).
-- Il faut **le droit de voir le journal du coffre** (permission de rang) pour que le scan fonctionne.
-- Le numéro `## Interface:` du `.toc` (110200) est peut-être à ajuster selon le patch courant ; sinon coche « extensions obsolètes ».
-- L'alignement des colonnes utilise la police par défaut de WoW : c'est lisible mais pas parfaitement aligné. On pourra l'affiner après un premier test en jeu.
+`WTF/Account/<account>/SavedVariables/GuildCotizDB.lua`
 
-## Fichiers
+## License
 
-- `GuildCotiz.toc` — description de l'addon.
-- `Core.lua` — lecture du coffre, dédoublonnage, calculs de cotisation.
-- `Export.lua` — génération CSV + fenêtre copier-coller.
-- `UI.lua` — fenêtre principale, filtres, commandes `/cotiz`.
+GuildCotiz is distributed under the MIT License. See [LICENSE](LICENSE).
