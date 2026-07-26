@@ -2,13 +2,14 @@
 ## Title: Guild Cotiz
 ## Notes: Track guild raid contributions, deposits and withdrawals with CSV export.
 ## Author: Damien
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: GuildCotizDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## X-Website: https://github.com/dde2a/GuildCotiz
 ## X-Category: Guild
 ## X-Curse-Project-ID: 1625909
 
+Locale.lua
 Core.lua
 Export.lua
 UI.lua

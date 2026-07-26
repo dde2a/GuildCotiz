@@ -2,6 +2,7 @@
 -- Generation du CSV et fenetre de copier-coller (vers Excel / Google Sheets).
 
 local ADDON, ns = ...
+local L = ns.L
 
 local function DateStr(t)
   if not t then return "" end
@@ -18,13 +19,13 @@ local function CSVCell(value, sep)
 end
 
 local function StatusText(st)
-  if st == "ajour" then return "A jour"
-  elseif st == "avance" then return "En avance"
-  elseif st == "retard" then return "En retard"
-  elseif st == "paye" then return "Paye"
-  elseif st == "couvert" then return "Couvert (avance)"
-  elseif st == "nonpaye" then return "Non paye"
-  elseif st == "norraid" then return "Aucun raid"
+  if st == "ajour" then return L("STATUS_CURRENT")
+  elseif st == "avance" then return L("STATUS_AHEAD")
+  elseif st == "retard" then return L("STATUS_BEHIND")
+  elseif st == "paye" then return L("STATUS_PAID")
+  elseif st == "couvert" then return L("STATUS_COVERED")
+  elseif st == "nonpaye" then return L("STATUS_UNPAID")
+  elseif st == "norraid" then return L("STATUS_NO_RAID")
   end
   return st or ""
 end
@@ -46,9 +47,9 @@ function ns.BuildSummaryCSV()
   local lines = {}
 
   local header = {
-    "Joueur", "Rang", "Debut suivi", "Raids effectues", "Total depose (po)",
-    "Du cumule (po)", "Solde (po)", "Statut",
-    "Raids de retard", "Raids payes d'avance", "Manque (po)",
+    L("CSV_PLAYER"), L("CSV_RANK"), L("CSV_TRACKING_START"), L("CSV_RAIDS_ATTENDED"),
+    L("CSV_TOTAL_DEPOSITED"), L("CSV_TOTAL_DUE"), L("CSV_BALANCE"), L("CSV_STATUS"),
+    L("CSV_RAIDS_BEHIND"), L("CSV_RAIDS_AHEAD"), L("CSV_MISSING"),
   }
   local htxt = {}
   for _, h in ipairs(header) do htxt[#htxt + 1] = CSVCell(h, sep) end
@@ -89,9 +90,10 @@ function ns.BuildWeeklyCSV(onlyPlayer)
   local lines = {}
 
   local header = {
-    "Joueur", "Semaine #", "Annee", "No semaine ISO", "Debut semaine", "Fin semaine",
-    "Raids", "Du semaine (po)", "Depose (po)",
-    "Cumul raids", "Cumule du (po)", "Cumule paye (po)", "Solde fin (po)", "Statut",
+    L("CSV_PLAYER"), L("CSV_WEEK_NUMBER"), L("CSV_YEAR"), L("CSV_ISO_WEEK"),
+    L("CSV_WEEK_START"), L("CSV_WEEK_END"), L("CSV_RAIDS"), L("CSV_WEEK_DUE"),
+    L("CSV_DEPOSITED"), L("CSV_CUMULATIVE_RAIDS"), L("CSV_CUMULATIVE_DUE"),
+    L("CSV_CUMULATIVE_PAID"), L("CSV_END_BALANCE"), L("CSV_STATUS"),
   }
   local htxt = {}
   for _, h in ipairs(header) do htxt[#htxt + 1] = CSVCell(h, sep) end
@@ -128,7 +130,10 @@ function ns.BuildWithdrawCSV(onlyPlayer)
   local sep = GuildCotizDB.settings.csvSeparator or ";"
   local lines = {}
 
-  local header = { "Joueur", "Rang", "Date", "Heure", "Montant (po)", "Type" }
+  local header = {
+    L("CSV_PLAYER"), L("CSV_RANK"), L("CSV_DATE"),
+    L("CSV_TIME"), L("CSV_AMOUNT"), L("CSV_TYPE"),
+  }
   local htxt = {}
   for _, h in ipairs(header) do htxt[#htxt + 1] = CSVCell(h, sep) end
   lines[#lines + 1] = table.concat(htxt, sep)
@@ -175,12 +180,12 @@ local function CreateExportFrame()
 
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -16)
-  title:SetText("Export CSV")
+  title:SetText(L("EXPORT_CSV"))
   frame.title = title
 
   local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   hint:SetPoint("TOP", title, "BOTTOM", 0, -6)
-  hint:SetText("Ctrl+A pour tout selectionner, Ctrl+C pour copier, puis colle dans Excel / Google Sheets.")
+  hint:SetText(L("CSV_HINT"))
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
@@ -201,7 +206,7 @@ local function CreateExportFrame()
   local selectBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   selectBtn:SetSize(160, 24)
   selectBtn:SetPoint("BOTTOMLEFT", 16, 14)
-  selectBtn:SetText("Tout selectionner")
+  selectBtn:SetText(L("SELECT_ALL"))
   selectBtn:SetScript("OnClick", function()
     edit:SetFocus()
     edit:HighlightText()
@@ -210,7 +215,7 @@ local function CreateExportFrame()
   local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   closeBtn:SetSize(120, 24)
   closeBtn:SetPoint("BOTTOMRIGHT", -30, 14)
-  closeBtn:SetText("Fermer")
+  closeBtn:SetText(L("CLOSE"))
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
   return frame
@@ -219,7 +224,7 @@ end
 -- Affiche la fenetre avec le texte donne
 function ns.ShowExport(text, titleText)
   if not exportFrame then exportFrame = CreateExportFrame() end
-  exportFrame.title:SetText(titleText or "Export CSV")
+  exportFrame.title:SetText(titleText or L("EXPORT_CSV"))
   exportFrame.edit:SetText(text or "")
   exportFrame.edit:SetCursorPosition(0)
   exportFrame:Show()

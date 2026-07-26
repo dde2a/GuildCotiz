@@ -19,6 +19,7 @@ amount owed is calculated from the configured contribution per raid.
 - Running balance showing whether a player is current, ahead or behind.
 - Weekly player details with deposits, amount owed and cumulative balance.
 - CSV exports for Excel and Google Sheets.
+- Automatic French or English interface based on the WoW client language.
 - All information remains stored locally in WoW SavedVariables.
 
 ## How it works

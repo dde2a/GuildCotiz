@@ -3,6 +3,7 @@
 -- filtre par joueur, reglages, et boutons d'export. Affichage en tableau (colonnes).
 
 local ADDON, ns = ...
+local L = ns.L
 
 local ROW_HEIGHT = 20
 local NUM_ROWS = 16
@@ -23,31 +24,31 @@ local selectedWeekMonday      -- lundi (timestamp) de la semaine affichee en vue
 --------------------------------------------------------------------------------
 local COLUMNS = {
   summary = {
-    { key = "name",      title = "Joueur",      x = 4,   w = 118, justify = "LEFT" },
-    { key = "rank",      title = "Rang",        x = 124, w = 84,  justify = "LEFT" },
+    { key = "name",      title = L("COL_PLAYER"),      x = 4,   w = 118, justify = "LEFT" },
+    { key = "rank",      title = L("COL_RANK"),        x = 124, w = 84,  justify = "LEFT" },
     -- colonne editable : nb de raids du joueur sur la semaine selectionnee
-    { key = "raidsWeek", title = "Raids sem.",  x = 212, w = 64,  justify = "CENTER", edit = true },
-    { key = "raidsTot",  title = "Raids tot.",  x = 282, w = 62,  justify = "RIGHT" },
-    { key = "paid",      title = "Depose",      x = 350, w = 88,  justify = "RIGHT" },
-    { key = "balance",   title = "Solde",       x = 444, w = 88,  justify = "RIGHT" },
-    { key = "status",    title = "Statut",      x = 538, w = 176, justify = "LEFT" },
+    { key = "raidsWeek", title = L("COL_RAIDS_WEEK"),  x = 212, w = 64,  justify = "CENTER", edit = true },
+    { key = "raidsTot",  title = L("COL_RAIDS_TOTAL"), x = 282, w = 62,  justify = "RIGHT" },
+    { key = "paid",      title = L("COL_DEPOSITED"),   x = 350, w = 88,  justify = "RIGHT" },
+    { key = "balance",   title = L("COL_BALANCE"),     x = 444, w = 88,  justify = "RIGHT" },
+    { key = "status",    title = L("COL_STATUS"),      x = 538, w = 176, justify = "LEFT" },
   },
   detail = {
-    { key = "start",   title = "Semaine",    x = 4,   w = 100, justify = "LEFT" },
-    { key = "raids",   title = "Raids",      x = 108, w = 48,  justify = "CENTER" },
-    { key = "dueweek", title = "Du sem.",    x = 160, w = 88,  justify = "RIGHT" },
-    { key = "dep",     title = "Depose",     x = 252, w = 88,  justify = "RIGHT" },
-    { key = "cumdue",  title = "Cumul du",   x = 344, w = 96,  justify = "RIGHT" },
-    { key = "cumpaid", title = "Cumul paye", x = 444, w = 96,  justify = "RIGHT" },
-    { key = "status",  title = "Statut",     x = 544, w = 170, justify = "LEFT" },
+    { key = "start",   title = L("COL_WEEK"),       x = 4,   w = 100, justify = "LEFT" },
+    { key = "raids",   title = L("COL_RAIDS"),      x = 108, w = 48,  justify = "CENTER" },
+    { key = "dueweek", title = L("COL_DUE_WEEK"),   x = 160, w = 88,  justify = "RIGHT" },
+    { key = "dep",     title = L("COL_DEPOSITED"),  x = 252, w = 88,  justify = "RIGHT" },
+    { key = "cumdue",  title = L("COL_TOTAL_DUE"),  x = 344, w = 96,  justify = "RIGHT" },
+    { key = "cumpaid", title = L("COL_TOTAL_PAID"), x = 444, w = 96,  justify = "RIGHT" },
+    { key = "status",  title = L("COL_STATUS"),     x = 544, w = 170, justify = "LEFT" },
   },
   withdraw = {
-    { key = "player", title = "Joueur",  x = 4,   w = 130, justify = "LEFT" },
-    { key = "rank",   title = "Rang",    x = 136, w = 100, justify = "LEFT" },
-    { key = "date",   title = "Date",    x = 240, w = 100, justify = "LEFT" },
-    { key = "time",   title = "Heure",   x = 344, w = 60,  justify = "LEFT" },
-    { key = "amount", title = "Montant", x = 408, w = 100, justify = "RIGHT" },
-    { key = "kind",   title = "Type",    x = 512, w = 130, justify = "LEFT" },
+    { key = "player", title = L("COL_PLAYER"), x = 4,   w = 130, justify = "LEFT" },
+    { key = "rank",   title = L("COL_RANK"),   x = 136, w = 100, justify = "LEFT" },
+    { key = "date",   title = L("COL_DATE"),   x = 240, w = 100, justify = "LEFT" },
+    { key = "time",   title = L("COL_TIME"),   x = 344, w = 60,  justify = "LEFT" },
+    { key = "amount", title = L("COL_AMOUNT"), x = 408, w = 100, justify = "RIGHT" },
+    { key = "kind",   title = L("COL_TYPE"),   x = 512, w = 130, justify = "LEFT" },
   },
 }
 
@@ -123,13 +124,13 @@ local function BuildRankMenu(owner, root)
   g.config.hiddenRanks = g.config.hiddenRanks or {}
   local ranks = GetRankList(g)
 
-  root:CreateTitle("Rangs a afficher")
-  root:CreateButton("Tout cocher", function()
+  root:CreateTitle(L("RANKS_TO_SHOW"))
+  root:CreateButton(L("CHECK_ALL"), function()
     wipe(g.config.hiddenRanks)
     ns.RefreshUI()
     return MenuResponse.Refresh
   end)
-  root:CreateButton("Tout decocher", function()
+  root:CreateButton(L("UNCHECK_ALL"), function()
     for _, r in ipairs(ranks) do g.config.hiddenRanks[r.name] = true end
     ns.RefreshUI()
     return MenuResponse.Refresh
@@ -201,13 +202,13 @@ local function GetInputDialog()
   local ok = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
   ok:SetSize(110, 24)
   ok:SetPoint("BOTTOMRIGHT", d, "BOTTOM", -8, 16)
-  ok:SetText("OK")
+  ok:SetText(L("OK"))
   ok:SetScript("OnClick", Accept)
 
   local cancel = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
   cancel:SetSize(110, 24)
   cancel:SetPoint("BOTTOMLEFT", d, "BOTTOM", 8, 16)
-  cancel:SetText("Annuler")
+  cancel:SetText(L("CANCEL"))
   cancel:SetScript("OnClick", function() d:Hide() end)
 
   eb:SetScript("OnEnterPressed", Accept)
@@ -232,7 +233,7 @@ local function PromptWeekly()
   local g = ns.GetGuildDB(true)
   if not g then return end
   local current = tostring(math.floor((g.config.raidAmount or 0) / ns.COPPER_PER_GOLD))
-  ShowInput("Cotisation due PAR RAID effectue (en or) :", current, function(txt)
+  ShowInput(L("RAID_AMOUNT_PROMPT"), current, function(txt)
     local gold = tonumber(txt)
     if gold then
       g.config.raidAmount = ns.GoldToCopper(gold)
@@ -245,7 +246,7 @@ local function PromptStart()
   local g = ns.GetGuildDB(true)
   if not g then return end
   local current = g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or ""
-  ShowInput("Debut de suivi (format AAAA-MM-JJ) :", current, function(txt)
+  ShowInput(L("START_DATE_PROMPT"), current, function(txt)
     local y, mo, d = txt:match("(%d+)%-(%d+)%-(%d+)")
     if y then
       g.config.seasonStart = time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 0 })
@@ -292,20 +293,20 @@ local function BuildFrame()
   local setAmount = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   setAmount:SetSize(130, 22)
   setAmount:SetPoint("TOPRIGHT", -20, -40)
-  setAmount:SetText("Montant / raid")
+  setAmount:SetText(L("AMOUNT_PER_RAID"))
   setAmount:SetScript("OnClick", PromptWeekly)
 
   local setStart = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   setStart:SetSize(130, 22)
   setStart:SetPoint("RIGHT", setAmount, "LEFT", -6, 0)
-  setStart:SetText("Debut de suivi")
+  setStart:SetText(L("TRACKING_START"))
   setStart:SetScript("OnClick", PromptStart)
 
   -- Onglets de mode
   local tabSummary = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   tabSummary:SetSize(100, 22)
   tabSummary:SetPoint("TOPLEFT", 20, -70)
-  tabSummary:SetText("Resume")
+  tabSummary:SetText(L("SUMMARY"))
   tabSummary:SetScript("OnClick", function()
     f.filter:SetText("") -- affiche a nouveau toute la liste
     UI.SetMode("summary")
@@ -315,14 +316,14 @@ local function BuildFrame()
   local tabDetail = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   tabDetail:SetSize(130, 22)
   tabDetail:SetPoint("LEFT", tabSummary, "RIGHT", 6, 0)
-  tabDetail:SetText("Detail semaine")
+  tabDetail:SetText(L("WEEKLY_DETAIL"))
   tabDetail:SetScript("OnClick", function() UI.SetMode("detail") end)
   f.tabDetail = tabDetail
 
   local tabWithdraw = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   tabWithdraw:SetSize(100, 22)
   tabWithdraw:SetPoint("LEFT", tabDetail, "RIGHT", 6, 0)
-  tabWithdraw:SetText("Retraits")
+  tabWithdraw:SetText(L("WITHDRAWALS"))
   tabWithdraw:SetScript("OnClick", function()
     f.filter:SetText("") -- liste complete des retraits
     UI.SetMode("withdraw")
@@ -333,12 +334,12 @@ local function BuildFrame()
   local rankBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   rankBtn:SetSize(150, 22)
   rankBtn:SetPoint("TOPRIGHT", -20, -70)
-  rankBtn:SetText("Rangs")
+  rankBtn:SetText(L("RANKS"))
   rankBtn:SetScript("OnClick", function(self)
     if MenuUtil and MenuUtil.CreateContextMenu then
       MenuUtil.CreateContextMenu(self, BuildRankMenu)
     else
-      print("|cff33ff99GuildCotiz|r : menu des rangs indisponible sur cette version.")
+      print("|cff33ff99GuildCotiz|r : " .. L("RANK_MENU_UNAVAILABLE"))
     end
   end)
   f.rankBtn = rankBtn
@@ -373,7 +374,7 @@ local function BuildFrame()
   local weekNow = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   weekNow:SetSize(90, 22)
   weekNow:SetPoint("LEFT", weekNext, "RIGHT", 12, 0)
-  weekNow:SetText("Actuelle")
+  weekNow:SetText(L("CURRENT_WEEK_BUTTON"))
   weekNow:SetScript("OnClick", function()
     viewWeekOffset = 0
     UI.Refresh()
@@ -384,10 +385,10 @@ local function BuildFrame()
   local applyAll = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   applyAll:SetSize(140, 22)
   applyAll:SetPoint("LEFT", weekNow, "RIGHT", 12, 0)
-  applyAll:SetText("Appliquer a tous")
+  applyAll:SetText(L("APPLY_TO_ALL"))
   applyAll:SetScript("OnClick", function()
     if not selectedWeekMonday then return end
-    ShowInput("Nombre de raids a appliquer a tous les joueurs affiches :", "", function(txt)
+    ShowInput(L("APPLY_RAIDS_PROMPT"), "", function(txt)
       local n = tonumber(txt)
       if not n then return end
       local g = ns.GetGuildDB(true)
@@ -397,7 +398,7 @@ local function BuildFrame()
         ns.SetRaids(g, selectedWeekMonday, name, n)
         count = count + 1
       end
-      print(string.format("|cff33ff99GuildCotiz|r : %d raid(s) applique(s) a %d joueur(s).", n, count))
+      print("|cff33ff99GuildCotiz|r : " .. L("RAIDS_APPLIED", n, count))
       UI.Refresh()
     end)
   end)
@@ -410,7 +411,7 @@ local function BuildFrame()
   -- Champ de filtre
   local filterLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   filterLabel:SetPoint("LEFT", tabWithdraw, "RIGHT", 16, 0)
-  filterLabel:SetText("Joueur :")
+  filterLabel:SetText(L("PLAYER_FILTER"))
 
   local filter = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
   filter:SetSize(150, 20)
@@ -527,36 +528,36 @@ local function BuildFrame()
   local scanBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   scanBtn:SetSize(170, 24)
   scanBtn:SetPoint("BOTTOMLEFT", 20, 16)
-  scanBtn:SetText("Scanner le coffre")
+  scanBtn:SetText(L("SCAN_BANK"))
   scanBtn:SetScript("OnClick", function()
     local added, err = ns.ScanBankLog()
     if err then
-      print("|cff33ff99GuildCotiz|r : " .. err .. " Ouvre le coffre de guilde d'abord.")
+      print("|cff33ff99GuildCotiz|r : " .. err .. " " .. L("OPEN_BANK_FIRST"))
     else
-      print(string.format("|cff33ff99GuildCotiz|r : scan termine, %d nouveau(x) depot(s).", added or 0))
+      print("|cff33ff99GuildCotiz|r : " .. L("SCAN_COMPLETE", added or 0))
     end
   end)
 
   local exportSummary = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   exportSummary:SetSize(150, 24)
   exportSummary:SetPoint("BOTTOMRIGHT", -30, 16)
-  exportSummary:SetText("Export resume")
+  exportSummary:SetText(L("EXPORT_SUMMARY"))
   exportSummary:SetScript("OnClick", function()
-    ns.ShowExport(ns.BuildSummaryCSV(), "Export CSV - Resume par joueur")
+    ns.ShowExport(ns.BuildSummaryCSV(), L("EXPORT_SUMMARY_TITLE"))
   end)
 
   local exportWeekly = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   exportWeekly:SetSize(170, 24)
   exportWeekly:SetPoint("RIGHT", exportSummary, "LEFT", -6, 0)
-  exportWeekly:SetText("Export semaine")
+  exportWeekly:SetText(L("EXPORT_WEEK"))
   exportWeekly:SetScript("OnClick", function()
     if mode == "withdraw" then
       local only = (filterText ~= "") and filterText or nil
       ns.ShowExport(ns.BuildWithdrawCSV(only),
-        only and ("Export CSV - Retraits de " .. only) or "Export CSV - Retraits")
+        only and L("EXPORT_PLAYER_WITHDRAWALS", only) or L("EXPORT_ALL_WITHDRAWALS"))
     else
       local only = (mode == "detail") and detailPlayer or nil
-      local titleTxt = only and ("Export CSV - Semaines de " .. only) or "Export CSV - Toutes les semaines"
+      local titleTxt = only and L("EXPORT_PLAYER_WEEKS", only) or L("EXPORT_ALL_WEEKS")
       ns.ShowExport(ns.BuildWeeklyCSV(only), titleTxt)
     end
   end)
@@ -594,14 +595,12 @@ end
 local function UpdateInfoBar()
   local g = ns.GetGuildDB(true)
   if not g then
-    mainFrame.info:SetText("|cffff5555Tu n'es pas dans une guilde.|r")
+    mainFrame.info:SetText("|cffff5555" .. L("NOT_IN_GUILD") .. "|r")
     return
   end
   local perRaid = ns.FormatGold(g.config.raidAmount)
   local startStr = g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "?"
-  mainFrame.info:SetText(string.format(
-    "Cotisation : |cffffd700%s|r par raid   |   Debut du suivi : |cff88ccff%s|r",
-    perRaid, startStr))
+  mainFrame.info:SetText(L("INFO_BAR", perRaid, startStr))
 end
 
 --------------------------------------------------------------------------------
@@ -637,12 +636,12 @@ local function UpdateWeekBar()
   selectedWeekMonday = selMonday
 
   local y, wk = ns.ISOWeek(selMonday)
-  mainFrame.weekLabel:SetText(string.format("Semaine %d / %d  (%s - %s)",
+  mainFrame.weekLabel:SetText(L("WEEK_LABEL",
     wk, y, date("%d/%m", selMonday), date("%d/%m", selEnd)))
   if viewWeekOffset == 0 then
-    mainFrame.weekSub:SetText("|cff88ff88Semaine en cours|r")
+    mainFrame.weekSub:SetText(L("CURRENT_WEEK"))
   else
-    mainFrame.weekSub:SetText("Statut au " .. date("%d/%m/%Y", refTime))
+    mainFrame.weekSub:SetText(L("STATUS_ON_DATE", date("%d/%m/%Y", refTime)))
   end
 
   mainFrame.weekPrev:SetEnabled(viewWeekOffset > minOffset)
@@ -670,11 +669,11 @@ local function BuildDisplayData(refTime)
         local s = ns.GetMemberStatus(g, entry.m, entry.name, now)
         local statusStr
         if s.status == "retard" then
-          statusStr = string.format("En retard %d raid(s) (%s)", s.raidsBehind, ns.FormatGold(s.due))
+          statusStr = L("BEHIND_RAIDS", s.raidsBehind, ns.FormatGold(s.due))
         elseif s.status == "avance" then
-          statusStr = string.format("En avance %d raid(s)", s.raidsAhead)
+          statusStr = L("AHEAD_RAIDS", s.raidsAhead)
         else
-          statusStr = "A jour"
+          statusStr = L("CURRENT")
         end
         local weekRaids = selectedWeekMonday and ns.GetRaids(g, selectedWeekMonday, entry.name) or 0
         data[#data + 1] = {
@@ -697,9 +696,9 @@ local function BuildDisplayData(refTime)
     if #data == 0 then
       local hasMembers = next(g.members) ~= nil
       if hasMembers then
-        data[1] = { full = "Aucun membre a afficher (verifie le filtre Rangs ou le champ Joueur).", color = nil }
+        data[1] = { full = L("NO_MEMBERS_FILTERED"), color = nil }
       else
-        data[1] = { full = "Aucun membre. Ouvre le coffre de guilde pour enregistrer des depots.", color = nil }
+        data[1] = { full = L("NO_MEMBERS"), color = nil }
       end
     end
     return data
@@ -725,7 +724,7 @@ local function BuildDisplayData(refTime)
       end
     end
     if #data == 0 then
-      data[1] = { full = "Aucun retrait enregistre. Ouvre le coffre de guilde pour lire le journal.", color = nil }
+      data[1] = { full = L("NO_WITHDRAWALS"), color = nil }
     end
     return data
 
@@ -734,7 +733,7 @@ local function BuildDisplayData(refTime)
     local target = filterText -- le champ 'Joueur' est la seule source
     if not target or target == "" then
       detailPlayer = nil
-      return { { full = "Tape un nom dans le champ 'Joueur' puis Entree, ou clique un joueur dans le Resume.", color = nil } }
+      return { { full = L("ENTER_PLAYER"), color = nil } }
     end
     local found
     for name, m in pairs(g.members) do
@@ -747,11 +746,11 @@ local function BuildDisplayData(refTime)
     end
     if not found then
       detailPlayer = nil
-      return { { full = "Joueur introuvable : " .. target, color = "retard" } }
+      return { { full = L("PLAYER_NOT_FOUND", target), color = "retard" } }
     end
 
     detailPlayer = found.name
-    mainFrame.title:SetText("Guild Cotiz - " .. found.name)
+    mainFrame.title:SetText(L("DETAIL_TITLE", found.name))
     local s = ns.GetMemberStatus(g, found.m, found.name, now)
     local data = {}
     for _, r in ipairs(ns.GetWeeklyBreakdown(g, found.m, found.name, now)) do
@@ -772,13 +771,11 @@ local function BuildDisplayData(refTime)
     -- ligne de synthese
     local summaryLine
     if s.status == "retard" then
-      summaryLine = string.format("=> %d raid(s) effectue(s) | en retard de %d raid(s), il manque %s.",
-        s.raids, s.raidsBehind, ns.FormatGold(s.due))
+      summaryLine = L("DETAIL_BEHIND", s.raids, s.raidsBehind, ns.FormatGold(s.due))
     elseif s.status == "avance" then
-      summaryLine = string.format("=> %d raid(s) effectue(s) | a jour, %d raid(s) payes d'avance.",
-        s.raids, s.raidsAhead)
+      summaryLine = L("DETAIL_AHEAD", s.raids, s.raidsAhead)
     else
-      summaryLine = string.format("=> %d raid(s) effectue(s) | a jour.", s.raids)
+      summaryLine = L("DETAIL_CURRENT", s.raids)
     end
     data[#data + 1] = { full = "" }
     data[#data + 1] = { full = summaryLine, color = s.status }
@@ -800,12 +797,12 @@ function UI.Refresh()
   if mode == "summary" then
     mainFrame.title:SetText("Guild Cotiz")
   elseif mode == "withdraw" then
-    mainFrame.title:SetText("Guild Cotiz - Retraits du coffre")
+    mainFrame.title:SetText(L("WITHDRAW_TITLE"))
   end
 
   -- le bouton d'export s'adapte a l'onglet actif
   if mainFrame.exportWeekly then
-    mainFrame.exportWeekly:SetText(mode == "withdraw" and "Export retraits" or "Export semaine")
+    mainFrame.exportWeekly:SetText(mode == "withdraw" and L("EXPORT_WITHDRAWALS") or L("EXPORT_WEEK"))
   end
 
   -- compteur de rangs affiches sur le bouton
@@ -816,9 +813,9 @@ function UI.Refresh()
     local shown = 0
     for _, r in ipairs(ranks) do if RankShown(g0, r.name) then shown = shown + 1 end end
     if #ranks > 0 and shown < #ranks then
-      mainFrame.rankBtn:SetText(string.format("Rangs (%d/%d)", shown, #ranks))
+      mainFrame.rankBtn:SetText(L("RANKS") .. string.format(" (%d/%d)", shown, #ranks))
     else
-      mainFrame.rankBtn:SetText("Rangs")
+      mainFrame.rankBtn:SetText(L("RANKS"))
     end
   end
 
@@ -943,10 +940,10 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     local g = ns.GetGuildDB(true)
     if g and gold then
       g.config.raidAmount = ns.GoldToCopper(gold)
-      print(string.format("|cff33ff99GuildCotiz|r : cotisation = %d po par raid.", gold))
+      print("|cff33ff99GuildCotiz|r : " .. L("SET_AMOUNT_SUCCESS", gold))
       ns.RefreshUI()
     else
-      print("|cff33ff99GuildCotiz|r : usage /cotiz set <montant en or par raid>")
+      print("|cff33ff99GuildCotiz|r : " .. L("SET_AMOUNT_USAGE"))
     end
   elseif cmd == "start" then
     local g = ns.GetGuildDB(true)
@@ -959,36 +956,37 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
         if e then
           g.config.seasonStart = e - (e % 86400)
         else
-          print("|cff33ff99GuildCotiz|r : aucun depot enregistre pour l'instant.")
+          print("|cff33ff99GuildCotiz|r : " .. L("NO_DEPOSIT_RECORDED"))
           return
         end
       else
         local now = time()
         g.config.seasonStart = now - (now % 86400)
       end
-      print("|cff33ff99GuildCotiz|r : debut de suivi = " .. date("%Y-%m-%d", g.config.seasonStart))
+      print("|cff33ff99GuildCotiz|r : " .. L("START_DATE_SUCCESS",
+        date("%Y-%m-%d", g.config.seasonStart)))
       ns.RefreshUI()
     end
   elseif cmd == "scan" then
     local added, err = ns.ScanBankLog()
     if err then print("|cff33ff99GuildCotiz|r : " .. err)
-    else print(string.format("|cff33ff99GuildCotiz|r : %d nouveau(x) depot(s).", added or 0)) end
+    else print("|cff33ff99GuildCotiz|r : " .. L("NEW_DEPOSITS", added or 0)) end
   elseif cmd == "fix" then
     local removed = ns.Deduplicate()
-    print(string.format("|cff33ff99GuildCotiz|r : %d doublon(s) supprime(s).", removed))
+    print("|cff33ff99GuildCotiz|r : " .. L("DUPLICATES_REMOVED", removed))
   elseif cmd == "export" then
-    ns.ShowExport(ns.BuildSummaryCSV(), "Export CSV - Resume par joueur")
+    ns.ShowExport(ns.BuildSummaryCSV(), L("EXPORT_SUMMARY_TITLE"))
   elseif cmd == "debug" then
     ns.DebugDump()
   else
-    print("|cff33ff99GuildCotiz|r commandes :")
-    print("  /cotiz            ouvre la fenetre")
-    print("  /cotiz set <or>   definit la cotisation hebdomadaire")
-    print("  /cotiz start [AAAA-MM-JJ]  definit le debut du suivi (defaut: aujourd'hui)")
-    print("  /cotiz start auto un debut au plus ancien depot connu")
-    print("  /cotiz scan       lit le journal du coffre (coffre ouvert requis)")
-    print("  /cotiz fix        supprime les doublons de depots deja enregistres")
-    print("  /cotiz export     ouvre l'export CSV")
-    print("  /cotiz debug      diagnostic (a lancer coffre ouvert)")
+    print("|cff33ff99GuildCotiz|r " .. L("HELP_TITLE"))
+    print(L("HELP_SHOW"))
+    print(L("HELP_SET"))
+    print(L("HELP_START"))
+    print(L("HELP_START_AUTO"))
+    print(L("HELP_SCAN"))
+    print(L("HELP_FIX"))
+    print(L("HELP_EXPORT"))
+    print(L("HELP_DEBUG"))
   end
 end
