@@ -708,18 +708,6 @@ local function BuildFrame()
   info:SetPoint("TOPLEFT", 20, -44)
   f.info = info
 
-  local setAmount = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  setAmount:SetSize(130, 22)
-  setAmount:SetPoint("TOPRIGHT", -20, -40)
-  setAmount:SetText(L("AMOUNT_PER_RAID"))
-  setAmount:SetScript("OnClick", PromptWeekly)
-
-  local setStart = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  setStart:SetSize(130, 22)
-  setStart:SetPoint("RIGHT", setAmount, "LEFT", -6, 0)
-  setStart:SetText(L("TRACKING_START"))
-  setStart:SetScript("OnClick", PromptStart)
-
   -- Onglets de mode
   local tabSummary = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   tabSummary:SetSize(100, 22)

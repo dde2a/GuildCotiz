@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 - 2026-07-27
+
+- Added a native Options > AddOns > GuildCotiz settings page.
+- Added safe profile export and import for addon configuration, main/alt associations, or both.
+- Profile imports show a summary and require explicit confirmation.
+- Deposit, withdrawal, raid attendance, and transaction history data are never included in profiles.
+- Reworked profile content selection with native vertical WoW checkboxes.
+
 ## 1.1.0 - 2026-07-26
 
 - Added editable weekly deposit amounts in the player detail view.
