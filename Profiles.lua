@@ -64,8 +64,10 @@ function ns.BuildProfile(scope)
     lines[#lines + 1] = "C|raidAmount|" .. tostring(g.config.raidAmount or 0)
     lines[#lines + 1] = "C|seasonStart|" .. tostring(g.config.seasonStart or 0)
     lines[#lines + 1] = "C|csvSeparator|" .. Escape((GuildCotizDB.settings or {}).csvSeparator or ";")
+    lines[#lines + 1] = "C|rankRoles|1"
     AddSet(lines, "H", g.config.hiddenRanks)
     AddSet(lines, "R", g.config.altRanks)
+    AddSet(lines, "M", g.config.mainRanks)
   end
   if scope == "alts" or scope == "both" then
     for alt, main in pairs(g.altToMain or {}) do
@@ -84,7 +86,7 @@ function ns.ParseProfile(text)
   if text:sub(1, #PREFIX) ~= PREFIX then return nil, "PREFIX" end
   local raw = Base64Decode(text:sub(#PREFIX + 1))
   if not raw then return nil, "BASE64" end
-  local profile = { config = {}, hiddenRanks = {}, altRanks = {}, links = {} }
+  local profile = { config = {}, hiddenRanks = {}, altRanks = {}, mainRanks = {}, links = {} }
   for line in raw:gmatch("[^\r\n]+") do
     local parts = {}
     for part in (line .. "|"):gmatch("(.-)|") do parts[#parts + 1] = part end
@@ -95,6 +97,7 @@ function ns.ParseProfile(text)
     elseif code == "C" then profile.config[parts[2]] = Unescape(parts[3])
     elseif code == "H" then profile.hiddenRanks[Unescape(parts[2])] = true
     elseif code == "R" then profile.altRanks[Unescape(parts[2])] = true
+    elseif code == "M" then profile.mainRanks[Unescape(parts[2])] = true
     elseif code == "L" then profile.links[Unescape(parts[2])] = Unescape(parts[3]) end
   end
   if profile.version ~= 1
@@ -119,7 +122,15 @@ function ns.ApplyProfile(profile)
     GuildCotizDB.settings.csvSeparator = profile.config.csvSeparator or ";"
     g.config.hiddenRanks = CopyTable(profile.hiddenRanks)
     g.config.altRanks = CopyTable(profile.altRanks)
+    g.config.mainRanks = CopyTable(profile.mainRanks)
+    if profile.config.rankRoles ~= "1" then
+      for _, member in pairs(g.members or {}) do
+        local rank = member.rankName or "?"
+        if not g.config.altRanks[rank] then g.config.mainRanks[rank] = true end
+      end
+    end
     g.config.altRanksInitialized = true
+    g.config.rankRolesInitialized = true
   end
   if profile.scope == "alts" or profile.scope == "both" then
     g.altToMain = {}
@@ -129,4 +140,132 @@ function ns.ApplyProfile(profile)
   end
   if ns.RefreshUI then ns.RefreshUI() end
   return true
+end
+
+local function CountProfile(profile)
+  profile.linkCount, profile.altRankCount, profile.hiddenRankCount = 0, 0, 0
+  for _ in pairs(profile.links or {}) do profile.linkCount = profile.linkCount + 1 end
+  for _ in pairs(profile.altRanks or {}) do profile.altRankCount = profile.altRankCount + 1 end
+  for _ in pairs(profile.hiddenRanks or {}) do profile.hiddenRankCount = profile.hiddenRankCount + 1 end
+  return profile
+end
+
+local function CaptureCurrentProfile()
+  local g = ns.GetGuildDB(true)
+  if not g then return nil end
+  ns.EnsureRankRoles(g)
+  return CountProfile({
+    version = 1,
+    scope = "both",
+    guild = ns.GetGuildKey(),
+    config = {
+      raidAmount = tostring(g.config.raidAmount or 0),
+      seasonStart = tostring(g.config.seasonStart or 0),
+      csvSeparator = (GuildCotizDB.settings or {}).csvSeparator or ";",
+      rankRoles = "1",
+    },
+    hiddenRanks = CopyTable(g.config.hiddenRanks or {}),
+    altRanks = CopyTable(g.config.altRanks or {}),
+    mainRanks = CopyTable(g.config.mainRanks or {}),
+    links = CopyTable(g.altToMain or {}),
+  })
+end
+
+local function CleanProfileName(name)
+  name = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if name == "" or #name > 40 then return nil end
+  return name
+end
+
+function ns.EnsureProfileStorage()
+  GuildCotizDB.profiles = GuildCotizDB.profiles or {}
+  GuildCotizDB.activeProfiles = GuildCotizDB.activeProfiles or {}
+  local guildKey = ns.GetGuildKey()
+  if not guildKey then return nil end
+  if not GuildCotizDB.profiles.Default then
+    GuildCotizDB.profiles.Default = CaptureCurrentProfile()
+  end
+  GuildCotizDB.activeProfiles[guildKey] = GuildCotizDB.activeProfiles[guildKey] or "Default"
+  return GuildCotizDB.profiles, GuildCotizDB.activeProfiles[guildKey]
+end
+
+function ns.GetActiveProfileName()
+  local _, active = ns.EnsureProfileStorage()
+  return active or "Default"
+end
+
+function ns.GetProfileNames()
+  local profiles = ns.EnsureProfileStorage()
+  local names = {}
+  for name in pairs(profiles or {}) do names[#names + 1] = name end
+  table.sort(names, function(a, b)
+    if a == "Default" then return true end
+    if b == "Default" then return false end
+    return a:lower() < b:lower()
+  end)
+  return names
+end
+
+function ns.SaveActiveProfile()
+  local profiles, active = ns.EnsureProfileStorage()
+  if not profiles or not active then return false end
+  profiles[active] = CaptureCurrentProfile()
+  return true
+end
+
+function ns.SelectProfile(name)
+  name = CleanProfileName(name)
+  local profiles, active = ns.EnsureProfileStorage()
+  if not name or not profiles or not profiles[name] then return false end
+  if active ~= name then ns.SaveActiveProfile() end
+  GuildCotizDB.activeProfiles[ns.GetGuildKey()] = name
+  return ns.ApplyProfile(CopyTable(profiles[name]))
+end
+
+function ns.StoreImportedProfile(name, imported)
+  name = CleanProfileName(name)
+  local profiles = ns.EnsureProfileStorage()
+  if not name or not profiles then return false, "invalid" end
+  for existingName in pairs(profiles) do
+    if existingName:lower() == name:lower() then return false, "exists" end
+  end
+  ns.SaveActiveProfile()
+  if not ns.ApplyProfile(imported) then return false, "invalid" end
+  profiles[name] = CaptureCurrentProfile()
+  GuildCotizDB.activeProfiles[ns.GetGuildKey()] = name
+  return true
+end
+
+function ns.DeleteProfile(name)
+  local profiles, active = ns.EnsureProfileStorage()
+  if not profiles or name == "Default" or not profiles[name] then return false end
+  profiles[name] = nil
+  if active == name then
+    GuildCotizDB.activeProfiles[ns.GetGuildKey()] = "Default"
+    ns.ApplyProfile(CopyTable(profiles.Default))
+  end
+  return true
+end
+
+function ns.ResetActiveProfile()
+  local profiles, active = ns.EnsureProfileStorage()
+  if not profiles or not active then return false end
+  if active == "Default" then
+    local g = ns.GetGuildDB(true)
+    if not g then return false end
+    local now = time()
+    g.config.raidAmount = 1000 * ns.COPPER_PER_GOLD
+    g.config.seasonStart = now - (now % 86400)
+    g.config.hiddenRanks = {}
+    g.config.altRanks, g.config.mainRanks = {}, {}
+    g.config.rankRolesInitialized = false
+    g.config.altRanksInitialized = false
+    ns.EnsureRankRoles(g)
+    g.altToMain = {}
+    profiles.Default = CaptureCurrentProfile()
+    if ns.RefreshUI then ns.RefreshUI() end
+    return true
+  end
+  profiles[active] = CopyTable(profiles.Default)
+  return ns.ApplyProfile(CopyTable(profiles[active]))
 end

@@ -84,7 +84,7 @@ end
 --------------------------------------------------------------------------------
 -- Construction du CSV : detail semaine par semaine (tous les joueurs)
 --------------------------------------------------------------------------------
-function ns.BuildWeeklyCSV(onlyPlayer)
+function ns.BuildWeeklyCSV(onlyPlayer, individual)
   local g = ns.GetGuildDB(true)
   if not g then return "" end
   local sep = GuildCotizDB.settings.csvSeparator or ";"
@@ -101,10 +101,19 @@ function ns.BuildWeeklyCSV(onlyPlayer)
   for _, h in ipairs(header) do htxt[#htxt + 1] = CSVCell(h, sep) end
   lines[#lines + 1] = table.concat(htxt, sep)
 
-  for _, entry in ipairs(ns.GetSortedMembers(g, { includeInactive = true })) do
-    if not ns.IsAlt(g, entry.name)
-      and (not onlyPlayer or entry.name:lower() == ns.ResolveMain(g, onlyPlayer):lower()) then
-      local rows = ns.GetWeeklyBreakdown(g, entry.m, entry.name, now)
+  local entries = ns.GetSortedMembers(g, { includeInactive = true })
+  for _, entry in ipairs(entries) do
+    local selected
+    if individual and onlyPlayer then
+      selected = entry.name:lower() == onlyPlayer:lower()
+    else
+      selected = not ns.IsAlt(g, entry.name)
+        and (not onlyPlayer or entry.name:lower() == ns.ResolveMain(g, onlyPlayer):lower())
+    end
+    if selected then
+      local rows = individual
+        and ns.GetIndividualWeeklyBreakdown(g, entry.m, entry.name, now)
+        or ns.GetWeeklyBreakdown(g, entry.m, entry.name, now)
       for _, r in ipairs(rows) do
         local isoYear, isoWeek = ns.ISOWeek(r.weekStart)
         local row = {
@@ -162,10 +171,10 @@ end
 --------------------------------------------------------------------------------
 -- Historique lisible des transactions originales d'un main et de ses rerolls
 --------------------------------------------------------------------------------
-function ns.BuildDepositHistoryCSV(mainName)
+function ns.BuildDepositHistoryCSV(mainName, individual)
   local g = ns.GetGuildDB(true)
   if not g or not mainName then return "" end
-  mainName = ns.ResolveMain(g, mainName)
+  if not individual then mainName = ns.ResolveMain(g, mainName) end
   local sep = GuildCotizDB.settings.csvSeparator or ";"
   local lines = {
     table.concat({
@@ -175,7 +184,17 @@ function ns.BuildDepositHistoryCSV(mainName)
       CSVCell(L("CSV_AMOUNT"), sep),
     }, sep),
   }
-  local transactions = ns.GetDepositTransactionsForGroup(g, mainName)
+  local transactions
+  if individual then
+    transactions = {}
+    local member = g.members[mainName]
+    for _, deposit in ipairs(member and member.deposits or {}) do
+      transactions[#transactions + 1] = { name = mainName, t = deposit.t, a = deposit.a }
+    end
+    table.sort(transactions, function(a, b) return a.t > b.t end)
+  else
+    transactions = ns.GetDepositTransactionsForGroup(g, mainName)
+  end
   if #transactions == 0 then return L("NO_DEPOSIT_HISTORY") end
   for _, tx in ipairs(transactions) do
     lines[#lines + 1] = table.concat({

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.1 - 2026-07-27
+
+- Added raid attendance editing for linked reroll rows.
+- Main contribution status now consolidates raids attended by the main and all linked rerolls.
+- Reroll detail views now show their own raids, deposits, corrections, and weekly history.
+- Weekly deposit corrections made from a reroll detail view now belong to that reroll.
+- Expanded reroll rows now display their own raid totals, deposits, and balances.
+- Weekly and deposit-history exports follow the selected reroll instead of silently exporting its main.
+- Removed group deposit overrides that could hide linked reroll contributions from the main total.
+- Existing group corrections are migrated to the main character while reroll deposits remain additive.
+- Replaced the hidden WoW context menu for alt ranks with a visible integrated multi-select popup.
+- Moved guild-rank classification to the addon options with reroll, unassigned, and main columns.
+- Added native internal scrolling to the rank columns so they fit the standard WoW options window.
+- Added named profile management with Default, selection, save, reset, delete, and named imports.
+- Replaced the active-profile button with the standard WoW profile dropdown.
+- Reorganized addon options into general settings, rank classification, then profile management, with page scrolling.
+- Fixed general settings saves and ensured option changes immediately update and persist in the active profile.
+
 ## 1.2.0 - 2026-07-27
 
 - Added a native Options > AddOns > GuildCotiz settings page.

@@ -16,6 +16,7 @@ local mainFrame
 local mode = "summary"        -- "summary" | "detail"
 local filterText = ""         -- filtre par nom de joueur
 local detailPlayer = nil      -- joueur affiche en mode detail
+local detailIsGroup = true    -- main = vue consolidee ; reroll = vue individuelle
 local viewWeekOffset = 0      -- 0 = semaine actuelle, negatif = semaines passees
 local selectedWeekMonday      -- lundi (timestamp) de la semaine affichee en vue Resume
 local expandedMains = {}      -- [nomMain] = true lorsque les rerolls sont deplies
@@ -274,14 +275,29 @@ local function PromptDepositCorrection(item)
   local currentText = (current == math.floor(current))
     and string.format("%.0f", current) or string.format("%.2f", current)
 
-  ShowInput(L("DEPOSIT_EDIT_PROMPT", weekLabel, item.mainName), currentText, function(txt)
+  local targetName = item.playerName or item.mainName
+  local promptKey = item.isGroupDetail and "DEPOSIT_EDIT_PROMPT" or "DEPOSIT_EDIT_PROMPT_PLAYER"
+  ShowInput(L(promptKey, weekLabel, targetName), currentText, function(txt)
     local clean = (txt or ""):gsub("%s", ""):gsub(",", ".")
     if clean == "" then
-      ns.SetGroupDepositOverride(g, item.mainName, item.weekTs, nil)
+      if item.isGroupDetail then
+        ns.SetDepositOverride(item.member, item.weekTs, nil)
+      else
+        ns.SetDepositOverride(item.member, item.weekTs, nil)
+      end
     else
       local gold = tonumber(clean)
       if not gold or gold < 0 then return end
-      ns.SetGroupDepositOverride(g, item.mainName, item.weekTs, ns.GoldToCopper(gold))
+      if item.isGroupDetail then
+        local desiredGroupTotal = ns.GoldToCopper(gold)
+        local rerollTotal = 0
+        for _, detail in ipairs(ns.GetGroupDepositsForWeek(g, item.mainName, item.weekTs, time())) do
+          if not detail.isMain then rerollTotal = rerollTotal + detail.amount end
+        end
+        ns.SetDepositOverride(item.member, item.weekTs, math.max(0, desiredGroupTotal - rerollTotal))
+      else
+        ns.SetDepositOverride(item.member, item.weekTs, ns.GoldToCopper(gold))
+      end
     end
     UI.Refresh()
   end)
@@ -297,23 +313,8 @@ local function FindKnownName(g, text)
   return nil
 end
 
-local function EnsureAltRanks(g)
-  g.config.altRanks = g.config.altRanks or {}
-  if not g.config.altRanksInitialized then
-    for _, member in pairs(g.members or {}) do
-      local rank = (member.rankName or ""):lower()
-      if rank:find("reroll", 1, true) then
-        g.config.altRanks[member.rankName] = true
-      end
-    end
-    g.config.altRanksInitialized = true
-  end
-  return g.config.altRanks
-end
-
 local function IsRerollMember(g, member)
-  local ranks = EnsureAltRanks(g)
-  return ranks[member and member.rankName or "?"] == true
+  return ns.GetRankRole(g, member and member.rankName or "?") == "alt"
 end
 
 local function CharacterBaseName(name)
@@ -338,7 +339,8 @@ local function FindBestAltSuggestion(g)
       local notes = ((altMember.note or "") .. " " .. (altMember.officerNote or "")):lower()
       for mainName, mainMember in pairs(g.members or {}) do
         if mainMember.active and mainName ~= altName
-          and not IsRerollMember(g, mainMember) and not ns.IsAlt(g, mainName) then
+          and ns.GetRankRole(g, mainMember.rankName or "?") == "main"
+          and not ns.IsAlt(g, mainName) then
           local mainBase = CharacterBaseName(mainName)
           local score, reason = 0, nil
           if #mainBase >= 4 and notes:find(mainBase, 1, true) then
@@ -479,15 +481,12 @@ local function RefreshAltDialog()
     end
   end
   altDialog.progressText:SetText(L("ALT_PROGRESS", linked, total, math.max(0, total - linked)))
-  local rankCount = 0
-  for _ in pairs(EnsureAltRanks(g)) do rankCount = rankCount + 1 end
-  altDialog.altRanksBtn:SetText(L("ALT_RANKS_COUNT", rankCount))
 end
 
 local function GetAltDialog()
   if altDialog then return altDialog end
   local d = CreateFrame("Frame", "GuildCotizAltDialog", UIParent, "BackdropTemplate")
-  d:SetSize(560, 390)
+  d:SetSize(560, 330)
   d:SetPoint("CENTER")
   d:SetFrameStrata("FULLSCREEN_DIALOG")
   d:SetToplevel(true)
@@ -545,45 +544,13 @@ local function GetAltDialog()
   mainEdit:SetPoint("LEFT", mainLabel, "RIGHT", 12, 0)
   mainEdit:SetAutoFocus(false)
   AddMemberAutocomplete(d, mainEdit, function(_, member, g)
-    return member.active and not IsRerollMember(g, member)
+    return member.active and ns.GetRankRole(g, member.rankName or "?") == "main"
   end)
   d.mainEdit = mainEdit
 
-  local altRanksBtn = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
-  altRanksBtn:SetSize(170, 24)
-  altRanksBtn:SetPoint("TOPLEFT", 30, -150)
-  altRanksBtn:SetText(L("ALT_RANKS"))
-  altRanksBtn:SetScript("OnClick", function(self)
-    local g = ns.GetGuildDB(true)
-    if not g then return end
-    if not (MenuUtil and MenuUtil.CreateContextMenu) then
-      print("|cff33ff99GuildCotiz|r : " .. L("RANK_MENU_UNAVAILABLE"))
-      return
-    end
-    MenuUtil.CreateContextMenu(self, function(_, root)
-      local selected = EnsureAltRanks(g)
-      root:CreateTitle(L("ALT_RANKS"))
-      for _, rank in ipairs(GetRankList(g)) do
-        local rankName = rank.name
-        root:CreateCheckbox(rankName, function()
-          return selected[rankName] == true
-        end, function()
-          selected[rankName] = selected[rankName] and nil or true
-          RefreshAltDialog()
-          UI.Refresh()
-          return MenuResponse.Refresh
-        end)
-      end
-    end)
-  end)
-  d.altRanksBtn = altRanksBtn
-  local mainRanksText = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  mainRanksText:SetPoint("LEFT", altRanksBtn, "RIGHT", 14, 0)
-  mainRanksText:SetText(L("MAIN_RANKS_AUTO"))
-
   local link = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
   link:SetSize(110, 24)
-  link:SetPoint("TOPLEFT", 88, -190)
+  link:SetPoint("TOPLEFT", 88, -154)
   link:SetText(L("LINK_ALT"))
   link:SetScript("OnClick", function()
     local g = ns.GetGuildDB(true)
@@ -642,19 +609,19 @@ local function GetAltDialog()
   end)
 
   local suggestionText = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  suggestionText:SetPoint("TOPLEFT", 30, -220)
-  suggestionText:SetPoint("TOPRIGHT", -30, -220)
+  suggestionText:SetPoint("TOPLEFT", 30, -184)
+  suggestionText:SetPoint("TOPRIGHT", -30, -184)
   suggestionText:SetJustifyH("LEFT")
   d.suggestionText = suggestionText
 
   local progressText = d:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  progressText:SetPoint("TOPLEFT", 30, -243)
-  progressText:SetPoint("TOPRIGHT", -30, -243)
+  progressText:SetPoint("TOPLEFT", 30, -207)
+  progressText:SetPoint("TOPRIGHT", -30, -207)
   progressText:SetJustifyH("LEFT")
   d.progressText = progressText
 
   local mappingText = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  mappingText:SetPoint("TOPLEFT", 30, -266)
+  mappingText:SetPoint("TOPLEFT", 30, -230)
   mappingText:SetPoint("BOTTOMRIGHT", -30, 28)
   mappingText:SetJustifyH("LEFT")
   mappingText:SetJustifyV("TOP")
@@ -821,7 +788,7 @@ local function BuildFrame()
   historyBtn:SetScript("OnClick", function()
     if not detailPlayer then return end
     ns.ShowExport(
-      ns.BuildDepositHistoryCSV(detailPlayer),
+      ns.BuildDepositHistoryCSV(detailPlayer, not detailIsGroup),
       L("DEPOSIT_HISTORY_TITLE", detailPlayer)
     )
   end)
@@ -1127,7 +1094,7 @@ local function BuildFrame()
     else
       local only = (mode == "detail") and detailPlayer or nil
       local titleTxt = only and L("EXPORT_PLAYER_WEEKS", only) or L("EXPORT_ALL_WEEKS")
-      ns.ShowExport(ns.BuildWeeklyCSV(only), titleTxt)
+      ns.ShowExport(ns.BuildWeeklyCSV(only, mode == "detail" and not detailIsGroup), titleTxt)
     end
   end)
   f.exportWeekly = exportWeekly
@@ -1325,22 +1292,27 @@ local function BuildDisplayData(refTime)
           for _, linked in ipairs(ns.GetLinkedCharacters(g, entry.name)) do
             if not linked.isMain then
               local altPaid = ns.TotalPaid(g, linked.m, now)
+              local altWeekRaids = selectedWeekMonday and ns.GetRaids(g, selectedWeekMonday, linked.name) or 0
+              local altTotalRaids = ns.TotalRaids(g, linked.name, now)
+              local altBalance = altPaid - altTotalRaids * (g.config.raidAmount or 0)
               data[#data + 1] = {
                 color = nil,
                 isAltRow = true,
                 altName = linked.name,
                 mainName = entry.name,
-                click = entry.name,
+                click = linked.name,
+                player = linked.name,
+                raidsWeek = altWeekRaids,
                 sortValues = mainSortValues,
                 sortGroup = entry.name,
                 sortChild = 1,
                 cols = {
                   name = L("ALT_ROW", linked.name),
                   rank = linked.m.rankName or "?",
-                  raidsWeek = "-",
-                  raidsTot = "-",
+                  raidsWeek = tostring(altWeekRaids),
+                  raidsTot = tostring(altTotalRaids),
                   paid = ns.FormatGold(altPaid),
-                  balance = "-",
+                  balance = ns.FormatGold(altBalance),
                   status = entry.name,
                 },
               }
@@ -1409,21 +1381,24 @@ local function BuildDisplayData(refTime)
       return { { full = L("PLAYER_NOT_FOUND", target), color = "retard" } }
     end
 
-    local resolvedMain = ns.ResolveMain(g, found.name)
-    if resolvedMain ~= found.name and g.members[resolvedMain] then
-      found = { name = resolvedMain, m = g.members[resolvedMain] }
-    end
-
     detailPlayer = found.name
+    detailIsGroup = not ns.IsAlt(g, found.name)
     mainFrame.title:SetText(L("DETAIL_TITLE", found.name))
-    local s = ns.GetMemberStatus(g, found.m, found.name, now)
+    local s = detailIsGroup
+      and ns.GetMemberStatus(g, found.m, found.name, now)
+      or ns.GetIndividualStatus(g, found.m, found.name, now)
     local data = {}
-    for _, r in ipairs(ns.GetWeeklyBreakdown(g, found.m, found.name, now)) do
+    local breakdown = detailIsGroup
+      and ns.GetWeeklyBreakdown(g, found.m, found.name, now)
+      or ns.GetIndividualWeeklyBreakdown(g, found.m, found.name, now)
+    for _, r in ipairs(breakdown) do
       local isoY, wk = ns.ISOWeek(r.weekStart)
       data[#data + 1] = {
         color = r.status,
         member = found.m,
-        mainName = found.name,
+        mainName = ns.ResolveMain(g, found.name),
+        playerName = found.name,
+        isGroupDetail = detailIsGroup,
         weekTs = r.weekStart,
         deposited = r.deposited,
         depositOverridden = r.depositOverridden,

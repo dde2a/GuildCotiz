@@ -47,7 +47,7 @@ local function GetProfileDialog()
 
   local scroll = CreateFrame("ScrollFrame", nil, d, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 28, -78)
-  scroll:SetPoint("BOTTOMRIGHT", -48, 82)
+  scroll:SetPoint("BOTTOMRIGHT", -48, 112)
   local edit = CreateFrame("EditBox", nil, scroll)
   edit:SetMultiLine(true)
   edit:SetAutoFocus(false)
@@ -58,6 +58,18 @@ local function GetProfileDialog()
   edit:SetScript("OnEscapePressed", function(self) self:ClearFocus(); d:Hide() end)
   scroll:SetScrollChild(edit)
   d.edit = edit
+
+  local nameLabel = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  nameLabel:SetPoint("BOTTOMLEFT", 30, 76)
+  nameLabel:SetText(L("PROFILE_NAME"))
+  nameLabel:Hide()
+  d.nameLabel = nameLabel
+  local nameEdit = CreateFrame("EditBox", nil, d, "InputBoxTemplate")
+  nameEdit:SetSize(220, 24)
+  nameEdit:SetPoint("LEFT", nameLabel, "RIGHT", 10, 0)
+  nameEdit:SetAutoFocus(false)
+  nameEdit:Hide()
+  d.nameEdit = nameEdit
 
   local analyze = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
   analyze:SetSize(150, 26)
@@ -90,9 +102,18 @@ local function GetProfileDialog()
     apply:Show()
   end)
   apply:SetScript("OnClick", function()
-    if d.pendingProfile and ns.ApplyProfile(d.pendingProfile) then
+    local profileName = d.nameEdit:GetText()
+    if not profileName or profileName:gsub("%s", "") == "" then
+      status:SetText("|cffff5555" .. L("PROFILE_NAME_REQUIRED") .. "|r")
+      return
+    end
+    local ok, err = ns.StoreImportedProfile(profileName, d.pendingProfile)
+    if ok then
       print("|cff33ff99GuildCotiz|r : " .. L("PROFILE_IMPORTED"))
+      if ns.RefreshOptions then ns.RefreshOptions() end
       d:Hide()
+    elseif err == "exists" then
+      status:SetText("|cffff5555" .. L("PROFILE_EXISTS") .. "|r")
     end
   end)
 
@@ -111,6 +132,8 @@ local function ShowExport()
   d.edit:EnableMouse(true)
   d.analyze:Hide()
   d.apply:Hide()
+  d.nameLabel:Hide()
+  d.nameEdit:Hide()
   d.status:SetText("")
   d:Show()
   d.edit:SetFocus()
@@ -124,8 +147,11 @@ local function ShowImport()
   d.edit:SetText("")
   d.edit:EnableMouse(true)
   d.pendingProfile = nil
+  d.nameEdit:SetText("")
   d.status:SetText("")
   d.apply:Hide()
+  d.nameLabel:Show()
+  d.nameEdit:Show()
   d.analyze:Show()
   d:Show()
   d.edit:SetFocus()
@@ -133,8 +159,14 @@ end
 
 local function RegisterOptions()
   if not Settings or not Settings.RegisterCanvasLayoutCategory then return end
-  local panel = CreateFrame("Frame")
-  panel.name = "Guild Cotiz"
+  local rootPanel = CreateFrame("Frame")
+  rootPanel.name = "Guild Cotiz"
+  local pageScroll = CreateFrame("ScrollFrame", nil, rootPanel, "UIPanelScrollFrameTemplate")
+  pageScroll:SetPoint("TOPLEFT", 0, 0)
+  pageScroll:SetPoint("BOTTOMRIGHT", -24, 0)
+  local panel = CreateFrame("Frame", nil, pageScroll)
+  panel:SetSize(680, 900)
+  pageScroll:SetScrollChild(panel)
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
   title:SetPoint("TOPLEFT", 20, -20)
@@ -142,6 +174,75 @@ local function RegisterOptions()
   local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
   description:SetText(L("OPTIONS_DESCRIPTION"))
+
+  local profileManagerLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  profileManagerLabel:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -22)
+  profileManagerLabel:SetText(L("PROFILE_MANAGER"))
+  local profileSelect = CreateFrame("Frame", "GuildCotizProfileDropdown", panel, "UIDropDownMenuTemplate")
+  profileSelect:SetPoint("LEFT", profileManagerLabel, "RIGHT", -4, 0)
+  UIDropDownMenu_SetWidth(profileSelect, 160)
+
+  local saveProfile = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  saveProfile:SetSize(110, 26)
+  saveProfile:SetPoint("LEFT", profileSelect, "RIGHT", 8, 0)
+  saveProfile:SetText(L("PROFILE_SAVE"))
+  local resetProfile = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  resetProfile:SetSize(90, 26)
+  resetProfile:SetPoint("LEFT", saveProfile, "RIGHT", 6, 0)
+  resetProfile:SetText(L("PROFILE_RESET"))
+  local deleteProfile = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  deleteProfile:SetSize(90, 26)
+  deleteProfile:SetPoint("LEFT", resetProfile, "RIGHT", 6, 0)
+  deleteProfile:SetText(L("PROFILE_DELETE"))
+
+  local function RefreshProfileManager()
+    local active = ns.GetActiveProfileName()
+    UIDropDownMenu_SetText(profileSelect, active)
+    deleteProfile:SetEnabled(active ~= "Default")
+  end
+  ns.RefreshOptions = function()
+    RefreshProfileManager()
+    if panel.RefreshFields then panel.RefreshFields() end
+    if panel.RefreshRankLists then panel.RefreshRankLists() end
+  end
+
+  UIDropDownMenu_Initialize(profileSelect, function(_, level)
+    for _, profileName in ipairs(ns.GetProfileNames()) do
+      local selectedName = profileName
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = selectedName
+      info.checked = ns.GetActiveProfileName() == selectedName
+      info.func = function()
+        ns.SelectProfile(selectedName)
+        RefreshProfileManager()
+        if panel.RefreshFields then panel.RefreshFields() end
+        if panel.RefreshRankLists then panel.RefreshRankLists() end
+      end
+      UIDropDownMenu_AddButton(info, level)
+    end
+  end)
+  saveProfile:SetScript("OnClick", function()
+    if ns.SaveActiveProfile() then
+      print("|cff33ff99GuildCotiz|r : " .. L("PROFILE_SAVED"))
+    end
+  end)
+  resetProfile:SetScript("OnClick", function()
+    if ns.ResetActiveProfile() then
+      RefreshProfileManager()
+      if panel.RefreshFields then panel.RefreshFields() end
+      if panel.RefreshRankLists then panel.RefreshRankLists() end
+      print("|cff33ff99GuildCotiz|r : " .. L("PROFILE_RESET_DONE"))
+    end
+  end)
+  deleteProfile:SetScript("OnClick", function()
+    local active = ns.GetActiveProfileName()
+    if ns.DeleteProfile(active) then
+      RefreshProfileManager()
+      if panel.RefreshFields then panel.RefreshFields() end
+      if panel.RefreshRankLists then panel.RefreshRankLists() end
+      print("|cff33ff99GuildCotiz|r : " .. L("PROFILE_DELETED"))
+    end
+  end)
 
   local amountLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   amountLabel:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -32)
@@ -159,6 +260,13 @@ local function RegisterOptions()
   startDate:SetPoint("TOPLEFT", dateLabel, "BOTTOMLEFT", 4, -8)
   startDate:SetAutoFocus(false)
 
+  function panel.RefreshFields()
+    local g = ns.GetGuildDB(true)
+    if not g then return end
+    amount:SetText(tostring(ns.CopperToGold(g.config.raidAmount or 0)))
+    startDate:SetText(g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "")
+  end
+
   local save = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   save:SetSize(140, 26)
   save:SetPoint("TOPLEFT", amount, "BOTTOMLEFT", 0, -14)
@@ -166,11 +274,30 @@ local function RegisterOptions()
   save:SetScript("OnClick", function()
     local g = ns.GetGuildDB(true)
     if not g then return end
-    local gold = tonumber((amount:GetText() or ""):gsub(",", "."))
+    local amountText = (amount:GetText() or ""):gsub("%s", ""):gsub(",", ".")
+    local gold = tonumber(amountText)
     local y, m, day = (startDate:GetText() or ""):match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
-    if gold and gold >= 0 then g.config.raidAmount = ns.GoldToCopper(gold) end
-    if y then g.config.seasonStart = time({ year = tonumber(y), month = tonumber(m), day = tonumber(day), hour = 0 }) end
+    if not gold or gold < 0 then
+      print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_INVALID_AMOUNT"))
+      return
+    end
+    if not y then
+      print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_INVALID_DATE"))
+      return
+    end
+    local newStart = time({ year = tonumber(y), month = tonumber(m), day = tonumber(day), hour = 0 })
+    if not newStart or date("%Y-%m-%d", newStart)
+      ~= string.format("%04d-%02d-%02d", tonumber(y), tonumber(m), tonumber(day)) then
+      print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_INVALID_DATE"))
+      return
+    end
+    g.config.raidAmount = ns.GoldToCopper(gold)
+    g.config.seasonStart = newStart
+    ns.SaveActiveProfile()
     ns.RefreshUI()
+    amount:ClearFocus()
+    startDate:ClearFocus()
+    panel.RefreshFields()
     print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_SAVED"))
   end)
 
@@ -222,14 +349,144 @@ local function RegisterOptions()
   import:SetText(L("PROFILE_IMPORT"))
   import:SetScript("OnClick", ShowImport)
 
-  panel:SetScript("OnShow", function()
+  local rolesTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  rolesTitle:SetPoint("TOPLEFT", save, "BOTTOMLEFT", 0, -38)
+  rolesTitle:SetText(L("RANK_ROLES_TITLE"))
+
+  local selectedRank
+  local selectedRole
+  local rankLists = {}
+
+  local function CreateRankList(role, titleText, x)
+    local titleTextFrame = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    titleTextFrame:SetPoint("TOPLEFT", rolesTitle, "BOTTOMLEFT", x, -14)
+    titleTextFrame:SetWidth(160)
+    titleTextFrame:SetJustifyH("CENTER")
+    titleTextFrame:SetText(titleText)
+    local box = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    box:SetSize(160, 142)
+    box:SetPoint("TOPLEFT", titleTextFrame, "BOTTOMLEFT", 0, -6)
+    box:SetBackdrop({
+      bgFile = "Interface\\Buttons\\WHITE8X8",
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 10,
+      insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    box:SetBackdropColor(0, 0, 0, 0.35)
+    local scroll = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 5, -5)
+    scroll:SetPoint("BOTTOMRIGHT", -25, 5)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(126, 132)
+    scroll:SetScrollChild(content)
+    box.scroll = scroll
+    box.content = content
+    box.rows = {}
+    for i = 1, 10 do
+      local row = CreateFrame("Button", nil, content)
+      row:SetHeight(20)
+      row:SetPoint("TOPLEFT", 2, -2 - ((i - 1) * 20))
+      row:SetPoint("TOPRIGHT", -2, -2 - ((i - 1) * 20))
+      local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      text:SetPoint("LEFT", 3, 0)
+      row.text = text
+      local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+      highlight:SetAllPoints()
+      highlight:SetColorTexture(1, 1, 1, 0.12)
+      row:SetScript("OnClick", function(self)
+        selectedRank = self.rankName
+        selectedRole = role
+        if panel.RefreshRankLists then panel.RefreshRankLists() end
+      end)
+      box.rows[i] = row
+    end
+    rankLists[role] = box
+    return box
+  end
+
+  local altList = CreateRankList("alt", L("REROLL_RANKS"), 0)
+  local unassignedList = CreateRankList("unassigned", L("UNASSIGNED_RANKS"), 220)
+  local mainList = CreateRankList("main", L("MAIN_RANKS"), 440)
+
+  -- Les profils sont volontairement regroupes apres tous les reglages classiques.
+  profileManagerLabel:ClearAllPoints()
+  profileManagerLabel:SetPoint("TOPLEFT", altList, "BOTTOMLEFT", 0, -36)
+  profileTitle:ClearAllPoints()
+  profileTitle:SetPoint("TOPLEFT", profileManagerLabel, "BOTTOMLEFT", 0, -42)
+
+  local function MoveSelected(role)
+    if not selectedRank then return end
     local g = ns.GetGuildDB(true)
     if not g then return end
-    amount:SetText(tostring(ns.CopperToGold(g.config.raidAmount or 0)))
-    startDate:SetText(g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "")
+    ns.SetRankRole(g, selectedRank, role)
+    selectedRole = role
+    panel.RefreshRankLists()
+    ns.SaveActiveProfile()
+    ns.RefreshUI()
+  end
+
+  local toAlt = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  toAlt:SetSize(38, 26)
+  toAlt:SetPoint("LEFT", altList, "RIGHT", 11, 26)
+  toAlt:SetText("<")
+  toAlt:SetScript("OnClick", function() MoveSelected("alt") end)
+  local fromAlt = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  fromAlt:SetSize(38, 26)
+  fromAlt:SetPoint("TOP", toAlt, "BOTTOM", 0, -8)
+  fromAlt:SetText(">")
+  fromAlt:SetScript("OnClick", function() MoveSelected("unassigned") end)
+
+  local fromMain = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  fromMain:SetSize(38, 26)
+  fromMain:SetPoint("LEFT", unassignedList, "RIGHT", 11, 26)
+  fromMain:SetText("<")
+  fromMain:SetScript("OnClick", function() MoveSelected("unassigned") end)
+  local toMain = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  toMain:SetSize(38, 26)
+  toMain:SetPoint("TOP", fromMain, "BOTTOM", 0, -8)
+  toMain:SetText(">")
+  toMain:SetScript("OnClick", function() MoveSelected("main") end)
+
+  function panel.RefreshRankLists()
+    local g = ns.GetGuildDB(true)
+    if not g then return end
+    ns.EnsureRankRoles(g)
+    local byRole = { alt = {}, unassigned = {}, main = {} }
+    local known = {}
+    for _, member in pairs(g.members or {}) do known[member.rankName or "?"] = true end
+    for rankName in pairs(known) do
+      local role = ns.GetRankRole(g, rankName)
+      byRole[role][#byRole[role] + 1] = rankName
+    end
+    for role, names in pairs(byRole) do
+      table.sort(names)
+      local list = rankLists[role]
+      list.content:SetHeight(math.max(132, 4 + (#names * 20)))
+      for i, row in ipairs(list.rows) do
+        local rankName = names[i]
+        if rankName then
+          row.rankName = rankName
+          row.text:SetText(
+            selectedRank == rankName and selectedRole == role and ("> " .. rankName) or rankName
+          )
+          row:Show()
+        else
+          row.rankName = nil
+          row:Hide()
+        end
+      end
+    end
+  end
+
+  rootPanel:SetScript("OnShow", function()
+    local g = ns.GetGuildDB(true)
+    if not g then return end
+    panel.RefreshFields()
+    RefreshProfileManager()
+    panel.RefreshRankLists()
   end)
 
-  local category = Settings.RegisterCanvasLayoutCategory(panel, "Guild Cotiz")
+  local category = Settings.RegisterCanvasLayoutCategory(rootPanel, "Guild Cotiz")
   Settings.RegisterAddOnCategory(category)
   ns.optionsCategoryID = category:GetID()
 end

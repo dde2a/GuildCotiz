@@ -129,6 +129,24 @@ function ns.GetGuildDB(create)
   g.raids = g.raids or {}
   g.altToMain = g.altToMain or {}
   g.groupDepositOverrides = g.groupDepositOverrides or {}
+  -- Migration 1.2.1 : les anciennes corrections de groupe deviennent des
+  -- corrections propres au main. Un reroll ne doit jamais etre masque par
+  -- une valeur globale qui remplace le total consolide.
+  if not g.groupOverridesMigratedToMembers then
+    for mainName, weeks in pairs(g.groupDepositOverrides) do
+      local mainMember = g.members and g.members[mainName]
+      if mainMember then
+        mainMember.depositOverrides = mainMember.depositOverrides or {}
+        for weekTs, amount in pairs(weeks) do
+          if mainMember.depositOverrides[weekTs] == nil then
+            mainMember.depositOverrides[weekTs] = amount
+          end
+        end
+      end
+    end
+    g.groupDepositOverrides = {}
+    g.groupOverridesMigratedToMembers = true
+  end
   if g.config then
     -- migration : l'ancienne cotisation hebdomadaire devient la cotisation par raid
     if g.config.raidAmount == nil then
@@ -141,6 +159,47 @@ function ns.GetGuildDB(create)
     end
   end
   return g
+end
+
+-- Classification explicite des rangs pour les associations main/reroll.
+-- Un rang absent des deux tables reste volontairement "non classe".
+function ns.EnsureRankRoles(g)
+  if not g then return {}, {} end
+  g.config.altRanks = g.config.altRanks or {}
+  g.config.mainRanks = g.config.mainRanks or {}
+  if not g.config.rankRolesInitialized then
+    -- Compatibilite : conserve les rangs rerolls deja choisis, puis classe les
+    -- autres rangs actuellement connus comme mains.
+    if not g.config.altRanksInitialized then
+      for _, member in pairs(g.members or {}) do
+        local rank = member.rankName or "?"
+        if rank:lower():find("reroll", 1, true) then g.config.altRanks[rank] = true end
+      end
+    end
+    for _, member in pairs(g.members or {}) do
+      local rank = member.rankName or "?"
+      if not g.config.altRanks[rank] then g.config.mainRanks[rank] = true end
+    end
+    g.config.altRanksInitialized = true
+    g.config.rankRolesInitialized = true
+  end
+  return g.config.altRanks, g.config.mainRanks
+end
+
+function ns.GetRankRole(g, rankName)
+  local altRanks, mainRanks = ns.EnsureRankRoles(g)
+  if altRanks[rankName or "?"] then return "alt" end
+  if mainRanks[rankName or "?"] then return "main" end
+  return "unassigned"
+end
+
+function ns.SetRankRole(g, rankName, role)
+  if not g or not rankName then return end
+  local altRanks, mainRanks = ns.EnsureRankRoles(g)
+  altRanks[rankName] = nil
+  mainRanks[rankName] = nil
+  if role == "alt" then altRanks[rankName] = true end
+  if role == "main" then mainRanks[rankName] = true end
 end
 
 --------------------------------------------------------------------------------
@@ -195,6 +254,22 @@ local function EnsureMember(g, shortName)
   m.depositOverrides = m.depositOverrides or {}
   m.officerNote = m.officerNote or ""
   return m
+end
+
+function ns.GetRaidsForGroup(g, weekTs, mainName)
+  local total = 0
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    total = total + ns.GetRaids(g, weekTs, entry.name)
+  end
+  return total
+end
+
+function ns.TotalRaidsForGroup(g, mainName, untilT)
+  local total = 0
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    total = total + ns.TotalRaids(g, entry.name, untilT)
+  end
+  return total
 end
 
 --------------------------------------------------------------------------------
@@ -478,17 +553,6 @@ function ns.TotalPaidForGroup(g, mainName, untilT)
     total = total + ns.TotalPaid(g, entry.m, untilT)
   end
 
-  -- Une correction de groupe remplace le cumul main+rerolls de la semaine.
-  local overrides = g.groupDepositOverrides and g.groupDepositOverrides[mainName]
-  for weekTs, override in pairs(overrides or {}) do
-    if not untilT or weekTs <= untilT then
-      local raw = 0
-      for _, detail in ipairs(ns.GetGroupDepositsForWeek(g, mainName, weekTs, untilT)) do
-        raw = raw + detail.amount
-      end
-      total = total - raw + override
-    end
-  end
   return total
 end
 
@@ -589,7 +653,7 @@ function ns.GetMemberStatus(g, m, name, now)
   name = ns.ResolveMain(g, name)
   m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
-  local raids = ns.TotalRaids(g, name, now)
+  local raids = ns.TotalRaidsForGroup(g, name, now)
   local owed = raids * perRaid
   local paid = ns.TotalPaidForGroup(g, name, now)
   local balance = paid - owed
@@ -645,7 +709,7 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
     local we = ws + WEEK_SECONDS
     index = index + 1
 
-    local raids = ns.GetRaids(g, ws, name)
+    local raids = ns.GetRaidsForGroup(g, ws, name)
     local dueWeek = raids * perRaid
 
     local deposited, depositOverridden = 0, false
@@ -654,12 +718,6 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
       deposited = deposited + detail.amount
       if detail.overridden then depositOverridden = true end
     end
-    local groupOverride, hasGroupOverride = ns.GetGroupDepositOverride(g, name, ws)
-    if hasGroupOverride then
-      deposited = groupOverride
-      depositOverridden = true
-    end
-
     cumRaids = cumRaids + raids
     cumOwed = cumOwed + dueWeek
     cumPaid = cumPaid + deposited
@@ -681,6 +739,63 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
       depositDetails = depositDetails,
       cumRaids = cumRaids, cumOwed = cumOwed, cumPaid = cumPaid,
       balanceEnd = balanceEnd, status = st,
+    }
+    ws = we
+  end
+  return rows
+end
+
+-- Statut et detail propres a un seul personnage, sans fusion avec son main.
+function ns.GetIndividualStatus(g, m, name, now)
+  now = now or time()
+  local perRaid = g.config.raidAmount or 0
+  local raids = ns.TotalRaids(g, name, now)
+  local paid = ns.TotalPaid(g, m, now)
+  local owed = raids * perRaid
+  local balance = paid - owed
+  local raidsCovered = (perRaid > 0) and math.floor(paid / perRaid) or 0
+  local raidsBehind = balance < 0 and ((perRaid > 0) and math.ceil(-balance / perRaid) or 0) or 0
+  local raidsAhead = balance >= 0 and math.max(0, raidsCovered - raids) or 0
+  return {
+    perRaid = perRaid, startT = ns.MemberStart(g, m), raids = raids, owed = owed,
+    paid = paid, balance = balance, raidsCovered = raidsCovered,
+    status = balance < 0 and "retard" or (raidsAhead > 0 and "avance" or "ajour"),
+    raidsBehind = raidsBehind, raidsAhead = raidsAhead, due = math.max(0, -balance),
+  }
+end
+
+function ns.GetIndividualWeeklyBreakdown(g, m, name, now)
+  now = now or time()
+  local perRaid = g.config.raidAmount or 0
+  local startT = ns.MemberStart(g, m)
+  local rows = {}
+  if not startT then return rows end
+  local ws, lastMonday = ns.WeekMonday(startT), ns.WeekMonday(now)
+  local cumPaid, cumOwed, cumRaids, index = 0, 0, 0, 0
+  while ws <= lastMonday do
+    local we = ws + WEEK_SECONDS
+    index = index + 1
+    local raids = ns.GetRaids(g, ws, name)
+    local dueWeek = raids * perRaid
+    local deposited, overridden = ns.GetDepositedForWeek(m, ws, startT, now)
+    cumRaids = cumRaids + raids
+    cumOwed = cumOwed + dueWeek
+    cumPaid = cumPaid + deposited
+    local balanceEnd = cumPaid - cumOwed
+    local status
+    if raids == 0 and deposited == 0 then
+      status = "norraid"
+    elseif balanceEnd >= 0 then
+      status = deposited > 0 and "paye" or "couvert"
+    else
+      status = "nonpaye"
+    end
+    rows[#rows + 1] = {
+      index = index, weekStart = ws, weekEnd = we, raids = raids,
+      dueWeek = dueWeek, deposited = deposited, depositOverridden = overridden,
+      depositDetails = { { name = name, m = m, amount = deposited, overridden = overridden } },
+      cumRaids = cumRaids, cumOwed = cumOwed, cumPaid = cumPaid,
+      balanceEnd = balanceEnd, status = status,
     }
     ws = we
   end
