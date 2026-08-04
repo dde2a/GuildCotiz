@@ -225,6 +225,8 @@ local function GetInputDialog()
   eb:SetScript("OnEscapePressed", function() d:Hide() end)
 
   tinsert(UISpecialFrames, "GuildCotizInputDialog")
+  ns.Theme.SkinWindow(d)
+  ns.Theme.AutoSkin(d)
   inputDialog = d
   return d
 end
@@ -627,6 +629,8 @@ local function GetAltDialog()
   mappingText:SetJustifyV("TOP")
   d.mappingText = mappingText
 
+  ns.Theme.SkinWindow(d)
+  ns.Theme.AutoSkin(d)
   altDialog = d
   return d
 end
@@ -1111,6 +1115,9 @@ local function BuildFrame()
   versionText:SetText("v" .. (version or "?"))
   f.versionText = versionText
 
+  ns.Theme.SkinWindow(f)
+  ns.Theme.AutoSkin(f)
+  headerBar:SetColorTexture(0.055, 0.067, 0.080, 0.98)
   mainFrame = f
   return f
 end
@@ -1450,6 +1457,9 @@ function UI.Refresh(scrollOnly)
     mainFrame.tabSummary:SetEnabled(mode ~= "summary")
     mainFrame.tabDetail:SetEnabled(mode ~= "detail")
     mainFrame.tabWithdraw:SetEnabled(mode ~= "withdraw")
+    ns.Theme.SetButtonActive(mainFrame.tabSummary, mode == "summary")
+    ns.Theme.SetButtonActive(mainFrame.tabDetail, mode == "detail")
+    ns.Theme.SetButtonActive(mainFrame.tabWithdraw, mode == "withdraw")
     if mode == "summary" then
       mainFrame.title:SetText("Guild Cotiz")
     elseif mode == "withdraw" then
@@ -1498,7 +1508,11 @@ function UI.Refresh(scrollOnly)
     local item = data[idx]
     if item then
       local r, gg, b = ColorFor(item.color)
-      row.bg:SetColorTexture(1, 1, 1, (idx % 2 == 0) and 0.05 or 0)
+      if idx % 2 == 0 then
+        row.bg:SetColorTexture(0.075, 0.090, 0.105, 0.72)
+      else
+        row.bg:SetColorTexture(0.040, 0.050, 0.060, 0.48)
+      end
 
       if item.full ~= nil then
         row.full:SetText(item.full)

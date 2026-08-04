@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 - 2026-08-04
+
+- Added dual Retail compatibility for WoW 12.0.7 and WoW 12.1.0.
+- Audited the guild roster, guild bank log, settings, menus, and scrolling APIs used by GuildCotiz for WoW 12.1.0.
+- Added a standalone modern dark theme inspired by popular minimalist WoW interfaces.
+- Restyled windows, buttons, input fields, borders, headers, and active tabs without requiring ElvUI.
+
 ## 1.2.1 - 2026-07-27
 
 - Added raid attendance editing for linked reroll rows.

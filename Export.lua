@@ -270,6 +270,9 @@ local function CreateExportFrame()
   closeBtn:SetText(L("CLOSE"))
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
+  ns.Theme.SkinWindow(frame)
+  ns.Theme.AutoSkin(frame)
+
   return frame
 end
 

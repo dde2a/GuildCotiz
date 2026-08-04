@@ -117,6 +117,8 @@ local function GetProfileDialog()
     end
   end)
 
+  ns.Theme.SkinWindow(d)
+  ns.Theme.AutoSkin(d)
   profileDialog = d
   return d
 end
@@ -485,6 +487,9 @@ local function RegisterOptions()
     RefreshProfileManager()
     panel.RefreshRankLists()
   end)
+
+  for _, list in pairs(rankLists) do ns.Theme.SkinPanel(list) end
+  ns.Theme.AutoSkin(panel)
 
   local category = Settings.RegisterCanvasLayoutCategory(rootPanel, "Guild Cotiz")
   Settings.RegisterAddOnCategory(category)
