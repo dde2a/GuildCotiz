@@ -15,6 +15,15 @@
 - Added `/cotiz sync` and `/cotiz sync status`, plus sync settings in the addon
   options.
 - Raid attendance, manual corrections and settings are never synchronized.
+- Added reconciliation of the member list against the real guild roster.
+- Characters who left the guild are now hidden from the table and no longer
+  counted, while their deposit history is preserved.
+- Departures are only applied when the roster read is complete, so hidden
+  offline members can never be mistaken for a guild-wide exodus.
+- Rejoining the guild clears the departure without touching any history.
+- Added a "Former members" checkbox to the Summary view.
+- Added `/cotiz roster` to refresh the roster and list former members, and
+  `/cotiz purge [all]` to delete them.
 
 ## 1.3.0 - 2026-08-04
 

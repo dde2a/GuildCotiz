@@ -20,6 +20,8 @@ amount owed is calculated from the configured contribution per raid.
 - Weekly player details with deposits, amount owed and cumulative balance.
 - CSV exports for Excel and Google Sheets.
 - Officer-to-officer sync of guild bank transactions.
+- Automatic detection of members who left the guild, hidden from the table
+  while their deposit history is preserved.
 - Automatic French or English interface based on the WoW client language.
 - All information remains stored locally in WoW SavedVariables.
 
@@ -62,11 +64,32 @@ does not owe anything for that week.
   attendance from group composition.
 - Only deposits and withdrawals are synchronized between officers. Raid
   attendance, manual corrections and settings stay local to each officer.
+- The member list is not synchronized: every officer reads the same guild roster
+  from the game and detects departures on their own.
 - Sync is opportunistic: two officers must be online at the same time to
   exchange data. Information spreads as officers connect.
 - Only transactions from the last 30 days are shared. Beyond that, WoW reports
   transaction age in whole months, which is too coarse to match the same
   transaction reliably across two clients.
+
+## Former members
+
+GuildCotiz reconciles its member list against the real guild roster. A character
+that is no longer in the guild is marked as gone, disappears from the table, and
+stops counting toward contributions — but stays in the database, because their
+deposit history is part of the accounting.
+
+Use the **Former members** checkbox in the Summary view to show them again,
+`/cotiz roster` to force a refresh and list them, and `/cotiz purge` to delete
+them for good. The plain `purge` only deletes former members who never deposited
+anything, which is safe for the accounting; `/cotiz purge all` deletes the rest
+too.
+
+Departures are only applied when the roster read is complete. World of Warcraft
+only indexes the guild members currently displayed, so with offline members
+hidden the addon would see a handful of online characters and wrongly conclude
+that everyone else left. When that happens, `/cotiz roster` says so and applies
+nothing.
 
 ## Officer sync
 
