@@ -1702,6 +1702,12 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     print("|cff33ff99GuildCotiz|r : " .. L("DUPLICATES_REMOVED", removed))
   elseif cmd == "export" then
     ns.ShowExport(ns.BuildSummaryCSV(), L("EXPORT_SUMMARY_TITLE"))
+  elseif cmd == "sync" then
+    if rest:lower() == "status" then
+      ns.Sync.Status()
+    else
+      ns.Sync.Broadcast(true)
+    end
   elseif cmd == "debug" then
     ns.DebugDump()
   else
@@ -1713,6 +1719,8 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     print(L("HELP_SCAN"))
     print(L("HELP_FIX"))
     print(L("HELP_EXPORT"))
+    print(L("HELP_SYNC"))
+    print(L("HELP_SYNC_STATUS"))
     print(L("HELP_DEBUG"))
   end
 end
