@@ -6,4 +6,3 @@ ignore:
   - .github
   - assets
   - PUBLISHING.md
-  - tests
