@@ -19,6 +19,9 @@ amount owed is calculated from the configured contribution per raid.
 - Running balance showing whether a player is current, ahead or behind.
 - Weekly player details with deposits, amount owed and cumulative balance.
 - CSV exports for Excel and Google Sheets.
+- Officer-to-officer sync of guild bank transactions.
+- Automatic detection of members who left the guild, hidden from the table
+  while their deposit history is preserved.
 - Automatic French or English interface based on the WoW client language.
 - All information remains stored locally in WoW SavedVariables.
 
@@ -59,14 +62,62 @@ does not owe anything for that week.
 - The character scanning the bank must have permission to view its money log.
 - Attendance is intentionally entered manually; the addon does not infer raid
   attendance from group composition.
-- SavedVariables are local and are not synchronized between officers.
+- Only deposits and withdrawals are synchronized between officers. Raid
+  attendance, manual corrections and settings stay local to each officer.
+- The member list is not synchronized: every officer reads the same guild roster
+  from the game and detects departures on their own.
+- Sync is opportunistic: two officers must be online at the same time to
+  exchange data. Information spreads as officers connect.
+- Only transactions from the last 30 days are shared. Beyond that, WoW reports
+  transaction age in whole months, which is too coarse to match the same
+  transaction reliably across two clients.
+
+## Former members
+
+GuildCotiz reconciles its member list against the real guild roster. A character
+that is no longer in the guild is marked as gone, disappears from the table, and
+stops counting toward contributions — but stays in the database, because their
+deposit history is part of the accounting.
+
+Use the **Former members** checkbox in the Summary view to show them again,
+`/cotiz roster` to force a refresh and list them, and `/cotiz purge` to delete
+them for good. The plain `purge` only deletes former members who never deposited
+anything, which is safe for the accounting; `/cotiz purge all` deletes the rest
+too.
+
+Departures are only applied when the roster read is complete. World of Warcraft
+only indexes the guild members currently displayed, so with offline members
+hidden the addon would see a handful of online characters and wrongly conclude
+that everyone else left. When that happens, `/cotiz roster` says so and applies
+nothing.
+
+## Officer sync
+
+Officers running GuildCotiz exchange the guild bank transactions they have
+recorded. Because WoW only exposes a short window of the money log, each officer
+captures a different slice of it; merging those slices recovers deposits that
+would otherwise be lost.
+
+Merging cannot conflict: transactions are facts, so combining two sets is a
+plain union. When both officers hold the same transaction, the earlier of the
+two timestamps is kept — WoW reports transaction age truncated to the hour, so
+the smallest recorded value is the closest to the real one, and picking the
+minimum makes every client converge on the same value.
+
+Messages travel on the `OFFICER` addon channel, which restricts the exchange to
+characters holding officer chat rights. Use `/cotiz sync` to trigger an exchange
+manually, `/cotiz sync status` to inspect the state, and the addon options to
+disable it or fall back to the `GUILD` channel.
 
 ## Privacy
 
-GuildCotiz does not transmit data. Guild names, character names, deposits,
+GuildCotiz does not transmit data outside the guild's own addon channel. Guild names, character names, deposits,
 withdrawals and attendance remain in:
 
 `WTF/Account/<account>/SavedVariables/GuildCotizDB.lua`
+
+Officer sync only ever carries guild bank deposits and withdrawals, and only to
+other GuildCotiz users in the same guild.
 
 ## License
 

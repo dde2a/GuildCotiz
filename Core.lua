@@ -97,7 +97,10 @@ local DEFAULT_CONFIG = {
 }
 
 local DEFAULT_SETTINGS = {
-  csvSeparator = ";",  -- separateur CSV (Excel FR aime le ;)
+  csvSeparator = ";",        -- separateur CSV (Excel FR aime le ;)
+  showFormerMembers = false, -- afficher les membres ayant quitte la guilde
+  syncEnabled  = true,       -- partage des transactions entre officiers
+  syncChannel  = "OFFICER",  -- "OFFICER" (recommande) ou "GUILD"
 }
 
 -- Cle unique de la guilde courante
@@ -344,13 +347,24 @@ end
 -- Scan du roster de guilde
 --------------------------------------------------------------------------------
 
+-- Lit le roster et reconcilie la liste des membres connus avec la guilde reelle.
+--
+-- Piege important : GetGuildRosterInfo n'indexe que les membres actuellement
+-- AFFICHES. Quand l'affichage des hors-ligne est desactive, la boucle ne voit
+-- que les connectes, et conclure "les autres sont partis" viderait la guilde.
+-- On ne marque donc un depart que si le roster lu est complet, c'est-a-dire si
+-- l'on a effectivement obtenu autant de noms que le total annonce par le
+-- serveur. Sinon on se contente de rafraichir ceux que l'on a vus.
+--
+-- Renvoie : roster complet (bool), nb de departs detectes, nb de retours.
 function ns.ScanRoster()
   local g = ns.GetGuildDB(true)
-  if not g then return end
-  local num = GetNumGuildMembers()
-  -- marque tout le monde inactif, puis re-active les presents
-  for _, m in pairs(g.members) do m.active = false end
-  for i = 1, num do
+  if not g then return false, 0, 0 end
+
+  local numTotal = GetNumGuildMembers()
+  local present, seen = {}, 0
+
+  for i = 1, (numTotal or 0) do
     local name, rankName, rankIndex, _, _, _, note, officerNote = GetGuildRosterInfo(i)
     if name then
       local short = ns.ShortName(name)
@@ -359,10 +373,99 @@ function ns.ScanRoster()
       m.rankIndex = rankIndex or m.rankIndex
       if note and note ~= "" then m.note = note end
       if officerNote and officerNote ~= "" then m.officerNote = officerNote end
-      m.active = true
+      present[short] = true
+      seen = seen + 1
     end
   end
+
+  local complete = (numTotal or 0) > 0 and seen == numTotal
+  local departures, returns = 0, 0
+
+  for name, m in pairs(g.members) do
+    if present[name] then
+      m.active = true
+      -- Un retour dans la guilde annule le depart sans toucher a l'historique.
+      if m.leftAt then
+        m.leftAt = nil
+        returns = returns + 1
+      end
+    elseif complete then
+      m.active = false
+      if not m.leftAt then
+        m.leftAt = time()
+        departures = departures + 1
+      end
+    end
+  end
+
+  g.rosterComplete = complete
+  if complete then g.rosterCheckedAt = time() end
+
   if ns.RefreshUI then ns.RefreshUI() end
+  return complete, departures, returns
+end
+
+--------------------------------------------------------------------------------
+-- Anciens membres
+--------------------------------------------------------------------------------
+
+-- Un membre parti reste en base : son historique de depots fait partie de la
+-- comptabilite. Il est simplement masque, et purgeable explicitement.
+function ns.IsFormerMember(m)
+  return m ~= nil and m.leftAt ~= nil
+end
+
+function ns.ShowFormerMembers()
+  local settings = GuildCotizDB and GuildCotizDB.settings
+  return settings ~= nil and settings.showFormerMembers == true
+end
+
+function ns.GetFormerMembers(g)
+  local out = {}
+  for name, m in pairs((g or {}).members or {}) do
+    if m.leftAt then
+      out[#out + 1] = { name = name, m = m, leftAt = m.leftAt, deposits = #(m.deposits or {}) }
+    end
+  end
+  table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
+  return out
+end
+
+-- Efface definitivement un ancien membre : sa fiche, ses liens main/reroll et
+-- ses presences saisies. Les rerolls qui lui etaient rattaches sont detaches
+-- plutot que supprimes, pour ne jamais perdre de donnees en cascade.
+function ns.PurgeFormerMember(g, name)
+  local m = g and g.members and g.members[name]
+  if not m or not m.leftAt then return false end
+
+  g.altToMain = g.altToMain or {}
+  g.altToMain[name] = nil
+  for altName, mainName in pairs(g.altToMain) do
+    if mainName == name then g.altToMain[altName] = nil end
+  end
+
+  for weekTs, players in pairs(g.raids or {}) do
+    if players[name] then
+      players[name] = nil
+      if next(players) == nil then g.raids[weekTs] = nil end
+    end
+  end
+
+  g.members[name] = nil
+  return true
+end
+
+-- Purge tous les anciens membres. onlyWithoutDeposits limite la purge a ceux qui
+-- n'ont jamais rien depose, ce qui est le cas sans risque comptable.
+function ns.PurgeFormerMembers(g, onlyWithoutDeposits)
+  local removed = 0
+  for _, entry in ipairs(ns.GetFormerMembers(g)) do
+    if not onlyWithoutDeposits or entry.deposits == 0 then
+      if ns.PurgeFormerMember(g, entry.name) then removed = removed + 1 end
+    end
+  end
+  if removed > 0 and ns.RefreshUI then ns.RefreshUI() end
+  return removed
 end
 
 --------------------------------------------------------------------------------
@@ -382,6 +485,59 @@ local function DedupKey(name, amount, absTime)
   local bucket = math.floor(absTime / 86400)
   return name .. "|" .. amount .. "|" .. bucket
 end
+ns.DedupKey = DedupKey
+
+-- Fenetre de rapprochement de deux enregistrements d'une meme transaction reelle.
+--
+-- WoW n'exprime l'anciennete d'une transaction qu'en heures entieres : un client
+-- qui scanne calcule absTime = maintenant - anciennete_tronquee, soit l'instant
+-- reel majore de 0 a 1 heure. Deux officiers qui scannent le meme depot a des
+-- moments differents obtiennent donc deux timestamps distants de moins d'une
+-- heure, quelle que soit la date du scan. 90 minutes couvrent ce decalage avec
+-- de la marge, tout en restant bien plus strict que le bucket d'un jour utilise
+-- par DedupKey.
+ns.MATCH_WINDOW = 90 * 60
+
+-- Retrouve dans une liste de transactions celle qui correspond au meme
+-- evenement reel (meme montant, horodatage proche). Renvoie nil sinon.
+function ns.FindNearbyTransaction(list, amount, absTime, window)
+  window = window or ns.MATCH_WINDOW
+  for _, entry in ipairs(list or {}) do
+    if entry.a == amount and math.abs((entry.t or 0) - absTime) <= window then
+      return entry
+    end
+  end
+  return nil
+end
+
+-- Enregistre une transaction, en la fusionnant avec l'occurrence deja connue du
+-- meme evenement s'il y en a une.
+--
+-- L'horodatage retenu est toujours le plus petit des deux. WoW ne donne que
+-- l'anciennete tronquee a l'heure, donc tout enregistrement majore l'instant
+-- reel de 0 a 1 heure : le minimum est a la fois le plus proche de la verite et
+-- une operation deterministe, commutative et associative. Deux officiers qui
+-- echangent la meme transaction convergent donc vers exactement la meme valeur,
+-- ce qui evite qu'un depot proche de minuit soit rattache a deux semaines ISO
+-- differentes selon le client.
+--
+-- Renvoie deux booleens : transaction ajoutee, et donnees modifiees.
+function ns.RecordTransaction(list, amount, absTime, kind)
+  local existing = ns.FindNearbyTransaction(list, amount, absTime)
+  if existing then
+    if absTime < existing.t then
+      existing.t = absTime
+      return false, true
+    end
+    return false, false
+  end
+  if kind then
+    table.insert(list, { t = absTime, a = amount, kind = kind })
+  else
+    table.insert(list, { t = absTime, a = amount })
+  end
+  return true, true
+end
 
 -- Lit le journal d'or (le coffre doit etre ouvert). Renvoie le nb de nouveaux depots.
 function ns.ScanBankLog()
@@ -394,8 +550,8 @@ function ns.ScanBankLog()
   local now = time()
   local count = GetNumGuildBankMoneyTransactions()
   local added = 0
-
   local addedW = 0
+  local changed = false
 
   for i = 1, count do
     local txType, name, amount, years, months, days, hours = GetGuildBankMoneyTransaction(i)
@@ -403,36 +559,45 @@ function ns.ScanBankLog()
       local short = ns.ShortName(name)
       local absTime = now - ElapsedToSeconds(years, months, days, hours)
 
-      -- Seuls les depots comptent comme cotisation
+      -- Le rapprochement se fait sur les donnees elles-memes plutot que sur
+      -- l'index g.seen : il tient ainsi compte des transactions recues d'un
+      -- autre officier, dont l'horodatage n'est pas le notre.
+      -- Seuls les depots comptent comme cotisation.
       if txType == "deposit" then
-        local key = DedupKey(short, amount, absTime)
-        if not g.seen[key] then
-          g.seen[key] = true
-          local m = EnsureMember(g, short)
-          table.insert(m.deposits, { t = absTime, a = amount })
+        local m = EnsureMember(g, short)
+        local isNew, touched = ns.RecordTransaction(m.deposits, amount, absTime)
+        if isNew then
+          g.seen[DedupKey(short, amount, absTime)] = true
           added = added + 1
+        elseif touched then
+          changed = true
         end
 
       -- Les sorties d'or sont enregistrees a part (onglet Retraits), jamais en cotisation
       elseif ns.WITHDRAW_TYPES[txType] then
-        local key = "W|" .. DedupKey(short, amount, absTime)
-        if not g.seen[key] then
-          g.seen[key] = true
-          local m = EnsureMember(g, short)
-          table.insert(m.withdrawals, { t = absTime, a = amount, kind = txType })
+        local m = EnsureMember(g, short)
+        local isNew, touched = ns.RecordTransaction(m.withdrawals, amount, absTime, txType)
+        if isNew then
+          g.seen["W|" .. DedupKey(short, amount, absTime)] = true
           addedW = addedW + 1
+        elseif touched then
+          changed = true
         end
       end
     end
   end
 
   -- tri par date pour l'historique
-  if added > 0 or addedW > 0 then
+  if added > 0 or addedW > 0 or changed then
     for _, m in pairs(g.members) do
       if m.deposits then table.sort(m.deposits, function(a, b) return a.t < b.t end) end
       if m.withdrawals then table.sort(m.withdrawals, function(a, b) return a.t < b.t end) end
     end
   end
+
+  -- Un scan qui apporte du neuf est le bon moment pour proposer ces donnees
+  -- aux autres officiers : leur journal a peut-etre deja perdu ces lignes.
+  if (added > 0 or addedW > 0) and ns.Sync then ns.Sync.Schedule(8) end
 
   if ns.RefreshUI then ns.RefreshUI() end
   return added, nil, addedW
@@ -808,9 +973,13 @@ end
 
 function ns.GetSortedMembers(g, opts)
   opts = opts or {}
+  local showFormer = opts.includeFormer or ns.ShowFormerMembers()
   local list = {}
   for name, m in pairs(g.members) do
-    if opts.includeInactive or m.active or #m.deposits > 0 then
+    local visible = opts.includeInactive or m.active or #m.deposits > 0
+    -- Un ancien membre reste en base mais sort des vues tant que l'officier
+    -- n'a pas demande a les voir.
+    if visible and (showFormer or not m.leftAt) then
       table.insert(list, { name = name, m = m })
     end
   end
@@ -850,6 +1019,8 @@ f:SetScript("OnEvent", function(self, event, arg1)
       C_GuildInfo.GuildRoster()
     end
     ns.ScanRoster()
+    -- Laisse le roster et la guilde se charger avant de parler aux autres.
+    if ns.Sync then ns.Sync.Schedule(20) end
 
   elseif event == "GUILD_ROSTER_UPDATE" then
     ns.ScanRoster()

@@ -167,7 +167,7 @@ local function RegisterOptions()
   pageScroll:SetPoint("TOPLEFT", 0, 0)
   pageScroll:SetPoint("BOTTOMRIGHT", -24, 0)
   local panel = CreateFrame("Frame", nil, pageScroll)
-  panel:SetSize(680, 900)
+  panel:SetSize(680, 1060)
   pageScroll:SetScrollChild(panel)
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
@@ -303,8 +303,67 @@ local function RegisterOptions()
     print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_SAVED"))
   end)
 
+  --------------------------------------------------------------------------
+  -- Synchronisation entre officiers (reglage global, hors profil de guilde)
+  --------------------------------------------------------------------------
+  local syncTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  syncTitle:SetPoint("TOPLEFT", save, "BOTTOMLEFT", 0, -34)
+  syncTitle:SetText(L("SYNC_SECTION"))
+
+  local syncEnable = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+  syncEnable:SetSize(26, 26)
+  syncEnable:SetPoint("TOPLEFT", syncTitle, "BOTTOMLEFT", 0, -12)
+  local syncEnableText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  syncEnableText:SetPoint("LEFT", syncEnable, "RIGHT", 4, 0)
+  syncEnableText:SetText(L("SYNC_OPTION_ENABLE"))
+  syncEnable:SetScript("OnClick", function(self)
+    GuildCotizDB.settings.syncEnabled = self:GetChecked() and true or false
+  end)
+  syncEnable:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(L("SYNC_OPTION_ENABLE_TIP"), nil, nil, nil, nil, true)
+    GameTooltip:Show()
+  end)
+  syncEnable:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  local syncChannelLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  syncChannelLabel:SetPoint("TOPLEFT", syncEnable, "BOTTOMLEFT", 0, -14)
+  syncChannelLabel:SetText(L("SYNC_OPTION_CHANNEL"))
+  local syncChannel = CreateFrame("Frame", "GuildCotizSyncChannelDropdown", panel, "UIDropDownMenuTemplate")
+  syncChannel:SetPoint("LEFT", syncChannelLabel, "RIGHT", -4, 0)
+  UIDropDownMenu_SetWidth(syncChannel, 120)
+
+  local function RefreshSyncOptions()
+    local settings = GuildCotizDB and GuildCotizDB.settings
+    if not settings then return end
+    syncEnable:SetChecked(settings.syncEnabled ~= false)
+    UIDropDownMenu_SetText(syncChannel, ns.Sync.Channel())
+  end
+
+  UIDropDownMenu_Initialize(syncChannel, function()
+    for _, value in ipairs({ "OFFICER", "GUILD" }) do
+      local entry = UIDropDownMenu_CreateInfo()
+      entry.text = value
+      entry.checked = (ns.Sync.Channel() == value)
+      entry.func = function()
+        GuildCotizDB.settings.syncChannel = value
+        RefreshSyncOptions()
+        CloseDropDownMenus()
+      end
+      UIDropDownMenu_AddButton(entry)
+    end
+  end)
+
+  local syncNow = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  syncNow:SetSize(160, 26)
+  syncNow:SetPoint("LEFT", syncChannel, "RIGHT", 8, 0)
+  syncNow:SetText(L("SYNC_OPTION_NOW"))
+  syncNow:SetScript("OnClick", function() ns.Sync.Broadcast(true) end)
+
+  panel.RefreshSyncOptions = RefreshSyncOptions
+
   local profileTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  profileTitle:SetPoint("TOPLEFT", save, "BOTTOMLEFT", 0, -40)
+  profileTitle:SetPoint("TOPLEFT", syncChannelLabel, "BOTTOMLEFT", 0, -40)
   profileTitle:SetText(L("PROFILE_SHARING"))
   local scopeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   scopeLabel:SetPoint("TOPLEFT", profileTitle, "BOTTOMLEFT", 0, -12)
@@ -352,7 +411,7 @@ local function RegisterOptions()
   import:SetScript("OnClick", ShowImport)
 
   local rolesTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  rolesTitle:SetPoint("TOPLEFT", save, "BOTTOMLEFT", 0, -38)
+  rolesTitle:SetPoint("TOPLEFT", syncChannelLabel, "BOTTOMLEFT", 0, -42)
   rolesTitle:SetText(L("RANK_ROLES_TITLE"))
 
   local selectedRank
@@ -484,6 +543,7 @@ local function RegisterOptions()
     local g = ns.GetGuildDB(true)
     if not g then return end
     panel.RefreshFields()
+    panel.RefreshSyncOptions()
     RefreshProfileManager()
     panel.RefreshRankLists()
   end)
