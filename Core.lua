@@ -98,6 +98,7 @@ local DEFAULT_CONFIG = {
 
 local DEFAULT_SETTINGS = {
   csvSeparator = ";",        -- separateur CSV (Excel FR aime le ;)
+  showFormerMembers = false, -- afficher les membres ayant quitte la guilde
   syncEnabled  = true,       -- partage des transactions entre officiers
   syncChannel  = "OFFICER",  -- "OFFICER" (recommande) ou "GUILD"
 }
@@ -346,13 +347,24 @@ end
 -- Scan du roster de guilde
 --------------------------------------------------------------------------------
 
+-- Lit le roster et reconcilie la liste des membres connus avec la guilde reelle.
+--
+-- Piege important : GetGuildRosterInfo n'indexe que les membres actuellement
+-- AFFICHES. Quand l'affichage des hors-ligne est desactive, la boucle ne voit
+-- que les connectes, et conclure "les autres sont partis" viderait la guilde.
+-- On ne marque donc un depart que si le roster lu est complet, c'est-a-dire si
+-- l'on a effectivement obtenu autant de noms que le total annonce par le
+-- serveur. Sinon on se contente de rafraichir ceux que l'on a vus.
+--
+-- Renvoie : roster complet (bool), nb de departs detectes, nb de retours.
 function ns.ScanRoster()
   local g = ns.GetGuildDB(true)
-  if not g then return end
-  local num = GetNumGuildMembers()
-  -- marque tout le monde inactif, puis re-active les presents
-  for _, m in pairs(g.members) do m.active = false end
-  for i = 1, num do
+  if not g then return false, 0, 0 end
+
+  local numTotal = GetNumGuildMembers()
+  local present, seen = {}, 0
+
+  for i = 1, (numTotal or 0) do
     local name, rankName, rankIndex, _, _, _, note, officerNote = GetGuildRosterInfo(i)
     if name then
       local short = ns.ShortName(name)
@@ -361,10 +373,99 @@ function ns.ScanRoster()
       m.rankIndex = rankIndex or m.rankIndex
       if note and note ~= "" then m.note = note end
       if officerNote and officerNote ~= "" then m.officerNote = officerNote end
-      m.active = true
+      present[short] = true
+      seen = seen + 1
     end
   end
+
+  local complete = (numTotal or 0) > 0 and seen == numTotal
+  local departures, returns = 0, 0
+
+  for name, m in pairs(g.members) do
+    if present[name] then
+      m.active = true
+      -- Un retour dans la guilde annule le depart sans toucher a l'historique.
+      if m.leftAt then
+        m.leftAt = nil
+        returns = returns + 1
+      end
+    elseif complete then
+      m.active = false
+      if not m.leftAt then
+        m.leftAt = time()
+        departures = departures + 1
+      end
+    end
+  end
+
+  g.rosterComplete = complete
+  if complete then g.rosterCheckedAt = time() end
+
   if ns.RefreshUI then ns.RefreshUI() end
+  return complete, departures, returns
+end
+
+--------------------------------------------------------------------------------
+-- Anciens membres
+--------------------------------------------------------------------------------
+
+-- Un membre parti reste en base : son historique de depots fait partie de la
+-- comptabilite. Il est simplement masque, et purgeable explicitement.
+function ns.IsFormerMember(m)
+  return m ~= nil and m.leftAt ~= nil
+end
+
+function ns.ShowFormerMembers()
+  local settings = GuildCotizDB and GuildCotizDB.settings
+  return settings ~= nil and settings.showFormerMembers == true
+end
+
+function ns.GetFormerMembers(g)
+  local out = {}
+  for name, m in pairs((g or {}).members or {}) do
+    if m.leftAt then
+      out[#out + 1] = { name = name, m = m, leftAt = m.leftAt, deposits = #(m.deposits or {}) }
+    end
+  end
+  table.sort(out, function(a, b) return a.name:lower() < b.name:lower() end)
+  return out
+end
+
+-- Efface definitivement un ancien membre : sa fiche, ses liens main/reroll et
+-- ses presences saisies. Les rerolls qui lui etaient rattaches sont detaches
+-- plutot que supprimes, pour ne jamais perdre de donnees en cascade.
+function ns.PurgeFormerMember(g, name)
+  local m = g and g.members and g.members[name]
+  if not m or not m.leftAt then return false end
+
+  g.altToMain = g.altToMain or {}
+  g.altToMain[name] = nil
+  for altName, mainName in pairs(g.altToMain) do
+    if mainName == name then g.altToMain[altName] = nil end
+  end
+
+  for weekTs, players in pairs(g.raids or {}) do
+    if players[name] then
+      players[name] = nil
+      if next(players) == nil then g.raids[weekTs] = nil end
+    end
+  end
+
+  g.members[name] = nil
+  return true
+end
+
+-- Purge tous les anciens membres. onlyWithoutDeposits limite la purge a ceux qui
+-- n'ont jamais rien depose, ce qui est le cas sans risque comptable.
+function ns.PurgeFormerMembers(g, onlyWithoutDeposits)
+  local removed = 0
+  for _, entry in ipairs(ns.GetFormerMembers(g)) do
+    if not onlyWithoutDeposits or entry.deposits == 0 then
+      if ns.PurgeFormerMember(g, entry.name) then removed = removed + 1 end
+    end
+  end
+  if removed > 0 and ns.RefreshUI then ns.RefreshUI() end
+  return removed
 end
 
 --------------------------------------------------------------------------------
@@ -872,9 +973,13 @@ end
 
 function ns.GetSortedMembers(g, opts)
   opts = opts or {}
+  local showFormer = opts.includeFormer or ns.ShowFormerMembers()
   local list = {}
   for name, m in pairs(g.members) do
-    if opts.includeInactive or m.active or #m.deposits > 0 then
+    local visible = opts.includeInactive or m.active or #m.deposits > 0
+    -- Un ancien membre reste en base mais sort des vues tant que l'officier
+    -- n'a pas demande a les voir.
+    if visible and (showFormer or not m.leftAt) then
       table.insert(list, { name = name, m = m })
     end
   end
