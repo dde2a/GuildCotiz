@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Added officer-to-officer synchronization of guild bank transactions.
+- Deposits and withdrawals are merged as a union, so two officers can never
+  conflict and the order of exchange does not matter.
+- Shared transactions converge on the earliest recorded timestamp, so a deposit
+  near midnight is no longer attributed to two different ISO weeks depending on
+  the officer.
+- Local scanning now matches transactions on their actual data rather than on a
+  one-day dedup bucket, which also removes duplicates the previous key missed.
+- Added the `OFFICER` addon channel as the default transport, restricting the
+  exchange to characters with officer chat rights.
+- Added `/cotiz sync` and `/cotiz sync status`, plus sync settings in the addon
+  options.
+- Raid attendance, manual corrections and settings are never synchronized.
+
 ## 1.3.0 - 2026-08-04
 
 - Added dual Retail compatibility for WoW 12.0.7 and WoW 12.1.0.

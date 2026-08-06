@@ -9,10 +9,18 @@
 ## X-Category: Guild
 ## X-Curse-Project-ID: 1625909
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\AceComm-3.0\ChatThrottleLib.lua
+Libs\AceComm-3.0\AceComm-3.0.lua
+Libs\LibDeflate\LibDeflate.lua
+Libs\LibSerialize\LibSerialize.lua
+
 Locale.lua
 Core.lua
 Theme.lua
 Profiles.lua
+Sync.lua
 Export.lua
 UI.lua
 Options.lua
