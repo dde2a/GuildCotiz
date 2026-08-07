@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.4.0 - 2026-08-06
+
+- Added officer-to-officer synchronization of guild bank transactions.
+- Deposits and withdrawals are merged as a union, so two officers can never
+  conflict and the order in which they exchange data does not matter.
+- Shared transactions converge on the earliest recorded timestamp, so a deposit
+  made near midnight is no longer attributed to two different ISO weeks
+  depending on which officer recorded it.
+- Officer sync runs on the `OFFICER` addon channel by default, restricting the
+  exchange to characters holding officer chat rights, with a `GUILD` fallback.
+- Only the weeks whose fingerprints differ are transferred, so a routine sync
+  costs a few hundred bytes.
+- Only transactions from the last 30 days are shared, beyond which World of
+  Warcraft reports transaction age too coarsely to match reliably.
+- Raid attendance, manual corrections and settings are never synchronized.
+- Local bank scanning now matches transactions on their actual data instead of a
+  one-day deduplication bucket, which also catches duplicates the previous key
+  missed.
+- Added `/cotiz sync` and `/cotiz sync status`, plus officer sync settings in the
+  addon options.
+- Added reconciliation of the member list against the real guild roster.
+- Characters who left the guild are now hidden from the table and no longer
+  counted, while their deposit history is preserved.
+- Departures are only applied when the roster read is complete, so guild members
+  hidden behind the offline filter can never be mistaken for a mass exodus.
+- Rejoining the guild clears the departure without touching any history.
+- Added a "Former members" checkbox to the Summary view.
+- Added `/cotiz roster` to refresh the roster and list former members, and
+  `/cotiz purge [all]` to delete them.
+- Purging defaults to former members who never deposited, and detaches linked
+  alts instead of deleting them in cascade.
+- Fixed the addon options page, where the officer sync block overlapped the
+  guild rank classification section.
+
 ## 1.3.0 - 2026-08-04
 
 - Added dual Retail compatibility for WoW 12.0.7 and WoW 12.1.0.

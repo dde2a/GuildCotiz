@@ -820,6 +820,26 @@ local function BuildFrame()
   end)
   f.filter = filter
 
+  -- Affichage des membres ayant quitte la guilde (masques par defaut)
+  local showFormer = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+  showFormer:SetSize(22, 22)
+  showFormer:SetPoint("LEFT", filter, "RIGHT", 10, 0)
+  -- Enfant de la case pour que le libelle se masque avec elle.
+  local showFormerText = showFormer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  showFormerText:SetPoint("LEFT", showFormer, "RIGHT", 2, 0)
+  showFormerText:SetText(L("SHOW_FORMER_MEMBERS"))
+  showFormer:SetScript("OnClick", function(self)
+    GuildCotizDB.settings.showFormerMembers = self:GetChecked() and true or false
+    UI.Refresh()
+  end)
+  showFormer:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(L("SHOW_FORMER_MEMBERS_TIP"), nil, nil, nil, nil, true)
+    GameTooltip:Show()
+  end)
+  showFormer:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  f.showFormer = showFormer
+
   -- Barre d'en-tete du tableau (fond + cellules)
   local headerBar = f:CreateTexture(nil, "ARTWORK")
   headerBar:SetColorTexture(0, 0, 0, 0.35)
@@ -1285,7 +1305,8 @@ local function BuildDisplayData(refTime)
           sortGroup = entry.name,
           sortChild = 0,
           cols = {
-            name      = entry.name,
+            name      = ns.IsFormerMember(entry.m)
+                        and L("FORMER_MEMBER_ROW", entry.name) or entry.name,
             rank      = entry.m.rankName or "?",
             raidsWeek = tostring(weekRaids),
             raidsTot  = tostring(s.raids),
@@ -1453,6 +1474,12 @@ function UI.Refresh(scrollOnly)
   else
     UpdateInfoBar()
     LayoutHeader()
+
+    if mainFrame.showFormer then
+      mainFrame.showFormer:SetChecked(ns.ShowFormerMembers())
+      -- La case ne concerne que la vue Resume.
+      mainFrame.showFormer:SetShown(mode == "summary")
+    end
 
     mainFrame.tabSummary:SetEnabled(mode ~= "summary")
     mainFrame.tabDetail:SetEnabled(mode ~= "detail")
@@ -1702,6 +1729,49 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     print("|cff33ff99GuildCotiz|r : " .. L("DUPLICATES_REMOVED", removed))
   elseif cmd == "export" then
     ns.ShowExport(ns.BuildSummaryCSV(), L("EXPORT_SUMMARY_TITLE"))
+  elseif cmd == "roster" then
+    if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+    local complete, departures, returns = ns.ScanRoster()
+    if not complete then
+      print("|cff33ff99GuildCotiz|r : " .. L("ROSTER_INCOMPLETE"))
+    else
+      print("|cff33ff99GuildCotiz|r : " .. L("ROSTER_SCANNED", departures, returns))
+      local g = ns.GetGuildDB(true)
+      local former = g and ns.GetFormerMembers(g) or {}
+      if #former > 0 then
+        print("|cff33ff99GuildCotiz|r : " .. L("ROSTER_FORMER_COUNT", #former))
+        for _, entry in ipairs(former) do
+          print(L("ROSTER_FORMER_LINE", entry.name,
+            date("%Y-%m-%d", entry.leftAt), entry.deposits))
+        end
+      end
+    end
+  elseif cmd == "purge" then
+    local g = ns.GetGuildDB(true)
+    if not g then
+      print("|cff33ff99GuildCotiz|r : " .. L("NOT_IN_GUILD"))
+    else
+      -- "all" inclut ceux qui ont depose ; par defaut on ne purge que les
+      -- anciens membres sans aucun depot, ce qui ne touche pas la comptabilite.
+      local purgeAll = (rest:lower() == "all")
+      local former = ns.GetFormerMembers(g)
+      if #former == 0 then
+        print("|cff33ff99GuildCotiz|r : " .. L("PURGE_NONE"))
+      else
+        local removed = ns.PurgeFormerMembers(g, not purgeAll)
+        print("|cff33ff99GuildCotiz|r : " .. L("PURGE_DONE", removed))
+        local left = #ns.GetFormerMembers(g)
+        if left > 0 then
+          print("|cff33ff99GuildCotiz|r : " .. L("PURGE_KEPT", left))
+        end
+      end
+    end
+  elseif cmd == "sync" then
+    if rest:lower() == "status" then
+      ns.Sync.Status()
+    else
+      ns.Sync.Broadcast(true)
+    end
   elseif cmd == "debug" then
     ns.DebugDump()
   else
@@ -1713,6 +1783,10 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     print(L("HELP_SCAN"))
     print(L("HELP_FIX"))
     print(L("HELP_EXPORT"))
+    print(L("HELP_ROSTER"))
+    print(L("HELP_PURGE"))
+    print(L("HELP_SYNC"))
+    print(L("HELP_SYNC_STATUS"))
     print(L("HELP_DEBUG"))
   end
 end
