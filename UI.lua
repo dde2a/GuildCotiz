@@ -161,6 +161,17 @@ local function BuildRankMenu(owner, root)
         return MenuResponse.Refresh
       end)
   end
+
+  -- Les membres partis sont un filtre d'affichage comme les rangs, et la barre
+  -- d'outils n'a pas la largeur d'une case supplementaire.
+  root:CreateDivider()
+  root:CreateCheckbox(L("SHOW_FORMER_MEMBERS"),
+    function() return ns.ShowFormerMembers() end,
+    function()
+      GuildCotizDB.settings.showFormerMembers = not ns.ShowFormerMembers()
+      ns.RefreshUI()
+      return MenuResponse.Refresh
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -820,26 +831,6 @@ local function BuildFrame()
   end)
   f.filter = filter
 
-  -- Affichage des membres ayant quitte la guilde (masques par defaut)
-  local showFormer = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-  showFormer:SetSize(22, 22)
-  showFormer:SetPoint("LEFT", filter, "RIGHT", 10, 0)
-  -- Enfant de la case pour que le libelle se masque avec elle.
-  local showFormerText = showFormer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  showFormerText:SetPoint("LEFT", showFormer, "RIGHT", 2, 0)
-  showFormerText:SetText(L("SHOW_FORMER_MEMBERS"))
-  showFormer:SetScript("OnClick", function(self)
-    GuildCotizDB.settings.showFormerMembers = self:GetChecked() and true or false
-    UI.Refresh()
-  end)
-  showFormer:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(L("SHOW_FORMER_MEMBERS_TIP"), nil, nil, nil, nil, true)
-    GameTooltip:Show()
-  end)
-  showFormer:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  f.showFormer = showFormer
-
   -- Barre d'en-tete du tableau (fond + cellules)
   local headerBar = f:CreateTexture(nil, "ARTWORK")
   headerBar:SetColorTexture(0, 0, 0, 0.35)
@@ -1474,12 +1465,6 @@ function UI.Refresh(scrollOnly)
   else
     UpdateInfoBar()
     LayoutHeader()
-
-    if mainFrame.showFormer then
-      mainFrame.showFormer:SetChecked(ns.ShowFormerMembers())
-      -- La case ne concerne que la vue Resume.
-      mainFrame.showFormer:SetShown(mode == "summary")
-    end
 
     mainFrame.tabSummary:SetEnabled(mode ~= "summary")
     mainFrame.tabDetail:SetEnabled(mode ~= "detail")

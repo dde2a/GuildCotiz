@@ -1,10 +1,15 @@
--- Geometrie de la page d'options, hors WoW.
+-- Geometrie des fenetres de l'addon, hors WoW.
 --
 -- Le panneau est construit par une chaine d'ancrages relatifs : chaque bloc se
 -- place sous le precedent. Il suffit d'oublier de re-ancrer un bloc quand on en
 -- insere un nouveau pour que deux sections se superposent, ce que la syntaxe ne
 -- detecte pas. On rejoue donc la construction avec un faux moteur de frames,
 -- on resout les positions, et on verifie qu'aucun libelle n'en recouvre un autre.
+--
+-- Couvre la page d'options ET la fenetre principale, dont la barre d'outils est
+-- saturee : les onglets et le filtre s'enchainent depuis la gauche pendant que
+-- le bouton des rangs est colle au bord droit, donc tout ajout au milieu vient
+-- buter sur l'un ou sur l'autre.
 
 local REPO = (arg[0]:match("^(.*)tests[/\\][^/\\]+$")) or "./"
 
@@ -21,6 +26,7 @@ local FONT_HEIGHT = {
 -- text n'existe pas tant que SetText n'a pas ete appele : sans rawget, le
 -- fallback du metatable renverrait une fonction au lieu de nil.
 local function TextOf(w) return rawget(w, "text") end
+local function ParentOf(w) return rawget(w, "parent") end
 
 local Widget = {}
 Widget.__index = function(tbl, key)
@@ -70,7 +76,24 @@ function Widget:CreateFontString(_, _, fontObject)
 end
 function Widget:CreateTexture() return NewWidget("Texture", self) end
 function Widget:GetChecked() return false end
-function Widget:IsShown() return true end
+function Widget:Hide() rawset(self, "hidden", true) end
+function Widget:Show() rawset(self, "hidden", false) end
+function Widget:SetShown(v) rawset(self, "hidden", not v) end
+-- false pousse UI.Toggle vers la branche Show, donc vers la construction.
+function Widget:IsShown() return not rawget(self, "hidden") end
+
+local function IsVisible(w)
+  while w do
+    if rawget(w, "hidden") then return false end
+    w = ParentOf(w)
+  end
+  return true
+end
+
+local function RootOf(w)
+  while w and ParentOf(w) do w = ParentOf(w) end
+  return w
+end
 
 --------------------------------------------------------------------------------
 -- Resolution des positions (repere ecran : y croissant vers le haut)
@@ -81,8 +104,17 @@ local function EffectiveHeight(w)
   return (w.height > 0) and w.height or 14
 end
 
+-- Les sequences d'echappement de WoW ne sont pas rendues : les compter comme
+-- des caracteres visibles gonfle la largeur et fabrique de fausses collisions.
+local function VisibleText(text)
+  text = tostring(text or "")
+  text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  text = text:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+  return text
+end
+
 local function EffectiveWidth(w)
-  if w.kind == "FontString" then return #(TextOf(w) or "") * 6.2 end
+  if w.kind == "FontString" then return #VisibleText(TextOf(w)) * 6.2 end
   return (w.width > 0) and w.width or 100
 end
 
@@ -124,8 +156,10 @@ env.CopyTable = function(t)
   for k, v in pairs(t) do out[k] = (type(v) == "table") and env.CopyTable(v) or v end
   return out
 end
+local namedFrames = {}
 env.CreateFrame = function(kind, name, parent, template)
   local w = NewWidget(kind, parent, template)
+  if name then namedFrames[name] = w end
   if kind == "Frame" and not template then w.width, w.height = 0, 0 end
   w.RegisterEvent = function() end
   w.SetScript = function(self, script, fn)
@@ -154,6 +188,12 @@ env.UIDropDownMenu_Initialize = function() end
 env.UIDropDownMenu_CreateInfo = function() return {} end
 env.UIDropDownMenu_AddButton = function() end
 env.CloseDropDownMenus = function() end
+env.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
+env.MenuUtil = { CreateContextMenu = function() end }
+env.StaticPopupDialogs = {}
+env.StaticPopup_Show = function() end
+env.ChatFontNormal = "ChatFontNormal"
+env.SlashCmdList = {}
 env.Settings = {
   RegisterCanvasLayoutCategory = function() return { GetID = function() return 1 end } end,
   RegisterAddOnCategory = function() end,
@@ -164,7 +204,7 @@ end })
 
 local ns = {}
 ns.Theme = setmetatable({}, { __index = function() return function() end end })
-for _, file in ipairs({ "Locale.lua", "Core.lua", "Profiles.lua", "Options.lua" }) do
+for _, file in ipairs({ "Locale.lua", "Core.lua", "Profiles.lua", "Export.lua", "UI.lua", "Options.lua" }) do
   local chunk = assert(loadfile(REPO .. file))
   setfenv(chunk, env)
   chunk("GuildCotiz", ns)
@@ -173,6 +213,9 @@ env.GuildCotizDB = { guilds = {}, settings = { syncEnabled = true, syncChannel =
 ns.Sync = { Channel = function() return "OFFICER" end, Broadcast = function() end }
 
 for _, fn in ipairs(loaders) do fn(nil, "ADDON_LOADED", "GuildCotiz") end
+
+-- Toggle construit la fenetre principale au premier appel.
+local builtMain = pcall(function() ns.UI.Toggle() end)
 
 --------------------------------------------------------------------------------
 -- Verifications
@@ -193,7 +236,8 @@ end
 local labelled = {}
 for _, w in ipairs(widgets) do
   local text = TextOf(w)
-  if type(text) == "string" and text ~= "" and w.kind ~= "Texture" and #w.points > 0 then
+  if type(text) == "string" and text ~= "" and w.kind ~= "Texture"
+    and #w.points > 0 and IsVisible(w) then
     local ok = pcall(Resolve, w)
     if ok and resolvedOf[w] and resolvedOf[w].top ~= 0 then
       labelled[#labelled + 1] = w
@@ -201,7 +245,7 @@ for _, w in ipairs(widgets) do
   end
 end
 
-print("== Page d'options : aucun libelle n'en recouvre un autre ==")
+print("== Options et fenetre principale : aucun libelle n'en recouvre un autre ==")
 print(string.format("  %d elements textuels positionnes", #labelled))
 
 local function Overlaps(a, b)
@@ -216,7 +260,7 @@ for i = 1, #labelled do
   for j = i + 1, #labelled do
     local a, b = labelled[i], labelled[j]
     -- Un parent direct englobe legitimement son enfant.
-    if a.parent ~= b and b.parent ~= a and Overlaps(a, b) then
+    if ParentOf(a) ~= b and ParentOf(b) ~= a and RootOf(a) == RootOf(b) and Overlaps(a, b) then
       collisions[#collisions + 1] = string.format("%q x %q", TextOf(a), TextOf(b))
     end
   end

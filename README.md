@@ -79,7 +79,7 @@ that is no longer in the guild is marked as gone, disappears from the table, and
 stops counting toward contributions — but stays in the database, because their
 deposit history is part of the accounting.
 
-Use the **Former members** checkbox in the Summary view to show them again,
+Use the **Former members** entry in the rank filter menu to show them again,
 `/cotiz roster` to force a refresh and list them, and `/cotiz purge` to delete
 them for good. The plain `purge` only deletes former members who never deposited
 anything, which is safe for the accounting; `/cotiz purge all` deletes the rest
