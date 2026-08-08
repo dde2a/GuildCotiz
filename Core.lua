@@ -498,45 +498,69 @@ ns.DedupKey = DedupKey
 -- par DedupKey.
 ns.MATCH_WINDOW = 90 * 60
 
--- Retrouve dans une liste de transactions celle qui correspond au meme
--- evenement reel (meme montant, horodatage proche). Renvoie nil sinon.
-function ns.FindNearbyTransaction(list, amount, absTime, window)
+-- Rapproche une serie d'observations avec ce qui est deja enregistre.
+--
+-- WoW n'exprime l'anciennete d'une transaction qu'en unites entieres, la plus
+-- fine etant l'heure. Deux depots identiques faits par le meme joueur dans la
+-- meme heure sont donc rigoureusement indiscernables par leur contenu : seul le
+-- NOMBRE de lignes du journal les distingue d'un unique depot relu deux fois.
+-- Rapprocher "par existence" perdait donc toujours le second.
+--
+-- On compare donc des SUITES, pas des ensembles. Les deux listes sont
+-- parcourues dans l'ordre chronologique et chaque entree deja connue n'est
+-- consommee qu'une seule fois. Deux operations identiques restent deux
+-- operations, alors qu'un meme journal relu n'ajoute rien.
+--
+-- observed est indexe par montant : { [montant] = { instant, instant, ... } }.
+-- kind vaut nil pour les depots, sinon le type de sortie, et ne rapproche alors
+-- que les entrees du meme type.
+--
+-- Renvoie le nombre d'entrees ajoutees et un booleen "donnees modifiees".
+function ns.ReconcileTransactions(stored, observed, kind, window)
   window = window or ns.MATCH_WINDOW
-  for _, entry in ipairs(list or {}) do
-    if entry.a == amount and math.abs((entry.t or 0) - absTime) <= window then
-      return entry
-    end
-  end
-  return nil
-end
+  local added, changed = 0, false
 
--- Enregistre une transaction, en la fusionnant avec l'occurrence deja connue du
--- meme evenement s'il y en a une.
---
--- L'horodatage retenu est toujours le plus petit des deux. WoW ne donne que
--- l'anciennete tronquee a l'heure, donc tout enregistrement majore l'instant
--- reel de 0 a 1 heure : le minimum est a la fois le plus proche de la verite et
--- une operation deterministe, commutative et associative. Deux officiers qui
--- echangent la meme transaction convergent donc vers exactement la meme valeur,
--- ce qui evite qu'un depot proche de minuit soit rattache a deux semaines ISO
--- differentes selon le client.
---
--- Renvoie deux booleens : transaction ajoutee, et donnees modifiees.
-function ns.RecordTransaction(list, amount, absTime, kind)
-  local existing = ns.FindNearbyTransaction(list, amount, absTime)
-  if existing then
-    if absTime < existing.t then
-      existing.t = absTime
-      return false, true
+  local byAmount = {}
+  for _, entry in ipairs(stored) do
+    if entry.kind == kind then
+      local slot = byAmount[entry.a]
+      if not slot then slot = {}; byAmount[entry.a] = slot end
+      slot[#slot + 1] = entry
     end
-    return false, false
   end
-  if kind then
-    table.insert(list, { t = absTime, a = amount, kind = kind })
-  else
-    table.insert(list, { t = absTime, a = amount })
+  for _, slot in pairs(byAmount) do
+    table.sort(slot, function(x, y) return (x.t or 0) < (y.t or 0) end)
   end
-  return true, true
+
+  for amount, times in pairs(observed) do
+    table.sort(times)
+    local slot = byAmount[amount] or {}
+    local cursor = 1
+    for _, t in ipairs(times) do
+      -- Les entrees trop anciennes pour correspondre sont definitivement passees.
+      while slot[cursor] and slot[cursor].t < (t - window) do
+        cursor = cursor + 1
+      end
+      local match = slot[cursor]
+      if match and math.abs(match.t - t) <= window then
+        -- Horodatage retenu : le plus petit des deux. Tout enregistrement majore
+        -- l'instant reel de 0 a 1 heure, donc le minimum est le plus proche de la
+        -- verite ; c'est aussi une operation deterministe, ce qui fait converger
+        -- tous les officiers vers la meme valeur.
+        if t < match.t then match.t = t; changed = true end
+        cursor = cursor + 1
+      else
+        if kind then
+          stored[#stored + 1] = { t = t, a = amount, kind = kind }
+        else
+          stored[#stored + 1] = { t = t, a = amount }
+        end
+        added = added + 1
+      end
+    end
+  end
+
+  return added, changed
 end
 
 -- Lit le journal d'or (le coffre doit etre ouvert). Renvoie le nb de nouveaux depots.
@@ -553,37 +577,52 @@ function ns.ScanBankLog()
   local addedW = 0
   local changed = false
 
+  -- Le journal est d'abord lu en entier, puis regroupe par joueur et par
+  -- montant. C'est le nombre de lignes qui distingue deux operations identiques
+  -- d'une seule relue : traiter les lignes une par une perdrait cette
+  -- information.
+  local deposits = {}     -- [joueur] = { [montant] = { instants } }
+  local withdrawals = {}  -- [joueur] = { [type] = { [montant] = { instants } } }
+
+  local function push(bucket, amount, absTime)
+    local slot = bucket[amount]
+    if not slot then slot = {}; bucket[amount] = slot end
+    slot[#slot + 1] = absTime
+  end
+
   for i = 1, count do
     local txType, name, amount, years, months, days, hours = GetGuildBankMoneyTransaction(i)
     if name and amount and amount > 0 then
       local short = ns.ShortName(name)
       local absTime = now - ElapsedToSeconds(years, months, days, hours)
 
-      -- Le rapprochement se fait sur les donnees elles-memes plutot que sur
-      -- l'index g.seen : il tient ainsi compte des transactions recues d'un
-      -- autre officier, dont l'horodatage n'est pas le notre.
       -- Seuls les depots comptent comme cotisation.
       if txType == "deposit" then
-        local m = EnsureMember(g, short)
-        local isNew, touched = ns.RecordTransaction(m.deposits, amount, absTime)
-        if isNew then
-          g.seen[DedupKey(short, amount, absTime)] = true
-          added = added + 1
-        elseif touched then
-          changed = true
-        end
+        deposits[short] = deposits[short] or {}
+        push(deposits[short], amount, absTime)
 
       -- Les sorties d'or sont enregistrees a part (onglet Retraits), jamais en cotisation
       elseif ns.WITHDRAW_TYPES[txType] then
-        local m = EnsureMember(g, short)
-        local isNew, touched = ns.RecordTransaction(m.withdrawals, amount, absTime, txType)
-        if isNew then
-          g.seen["W|" .. DedupKey(short, amount, absTime)] = true
-          addedW = addedW + 1
-        elseif touched then
-          changed = true
-        end
+        withdrawals[short] = withdrawals[short] or {}
+        withdrawals[short][txType] = withdrawals[short][txType] or {}
+        push(withdrawals[short][txType], amount, absTime)
       end
+    end
+  end
+
+  for short, observed in pairs(deposits) do
+    local m = EnsureMember(g, short)
+    local n, touched = ns.ReconcileTransactions(m.deposits, observed, nil)
+    added = added + n
+    changed = changed or touched
+  end
+
+  for short, byKind in pairs(withdrawals) do
+    local m = EnsureMember(g, short)
+    for txType, observed in pairs(byKind) do
+      local n, touched = ns.ReconcileTransactions(m.withdrawals, observed, txType)
+      addedW = addedW + n
+      changed = changed or touched
     end
   end
 
@@ -603,46 +642,37 @@ function ns.ScanBankLog()
   return added, nil, addedW
 end
 
--- Nettoie les doublons deja enregistres (par nom+montant+jour) et reconstruit l'index.
--- Renvoie le nombre d'entrees supprimees.
+-- Remet l'historique en ordre et reconstruit l'index de deduplication.
+--
+-- Cette commande supprimait auparavant toute transaction partageant nom, montant
+-- et jour avec une autre. C'est precisement ce qui rendait invisible un joueur
+-- deposant deux fois le meme montant dans la journee : ces deux depots sont
+-- legitimes et indiscernables d'un doublon. Puisque rien dans les donnees ne
+-- permet de trancher, la commande ne supprime plus rien ; le rapprochement par
+-- suites empeche desormais les doublons d'apparaitre a la source.
+--
+-- Renvoie le nombre de transactions conservees.
 function ns.Deduplicate()
   local g = ns.GetGuildDB(true)
   if not g then return 0 end
   g.seen = {}
-  local removed = 0
+  local kept = 0
+
   for name, m in pairs(g.members) do
-    local localSeen = {}
-
-    local kept = {}
     for _, d in ipairs(m.deposits or {}) do
-      local key = DedupKey(name, d.a, d.t)
-      if localSeen[key] then
-        removed = removed + 1
-      else
-        localSeen[key] = true
-        g.seen[key] = true
-        kept[#kept + 1] = d
-      end
+      g.seen[DedupKey(name, d.a, d.t)] = true
+      kept = kept + 1
     end
-    table.sort(kept, function(a, b) return a.t < b.t end)
-    m.deposits = kept
-
-    local keptW = {}
     for _, w in ipairs(m.withdrawals or {}) do
-      local key = "W|" .. DedupKey(name, w.a, w.t)
-      if localSeen[key] then
-        removed = removed + 1
-      else
-        localSeen[key] = true
-        g.seen[key] = true
-        keptW[#keptW + 1] = w
-      end
+      g.seen["W|" .. DedupKey(name, w.a, w.t)] = true
+      kept = kept + 1
     end
-    table.sort(keptW, function(a, b) return a.t < b.t end)
-    m.withdrawals = keptW
+    if m.deposits then table.sort(m.deposits, function(a, b) return a.t < b.t end) end
+    if m.withdrawals then table.sort(m.withdrawals, function(a, b) return a.t < b.t end) end
   end
+
   if ns.RefreshUI then ns.RefreshUI() end
-  return removed
+  return kept
 end
 
 --------------------------------------------------------------------------------

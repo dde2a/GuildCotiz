@@ -208,26 +208,47 @@ function Sync.MergeTransactions(g, list)
   local now = time()
   local addedD, addedW, realigned = 0, 0, 0
 
+  -- Regroupe avant de fusionner : deux depots identiques recus du meme pair
+  -- doivent rester deux depots, ce qu'un rapprochement entree par entree
+  -- perdrait. Le rapprochement compare donc des suites, comme le scan local.
+  local deposits = {}     -- [joueur] = { [montant] = { instants } }
+  local withdrawals = {}  -- [joueur] = { [type] = { [montant] = { instants } } }
+
+  local function push(bucket, amount, t)
+    local slot = bucket[amount]
+    if not slot then slot = {}; bucket[amount] = slot end
+    slot[#slot + 1] = t
+  end
+
   for _, entry in ipairs(list or {}) do
     if IsValidEntry(entry, now) then
       local name   = ns.ShortName(entry.n)
       local amount = math.floor(entry.a)
       local t      = math.floor(entry.t)
-      local m      = ns.EnsureMember(g, name)
-      local target = entry.k and m.withdrawals or m.deposits
-
-      local isNew, touched = ns.RecordTransaction(target, amount, t, entry.k)
-      if isNew then
-        if entry.k then
-          g.seen["W|" .. ns.DedupKey(name, amount, t)] = true
-          addedW = addedW + 1
-        else
-          g.seen[ns.DedupKey(name, amount, t)] = true
-          addedD = addedD + 1
-        end
-      elseif touched then
-        realigned = realigned + 1
+      if entry.k then
+        withdrawals[name] = withdrawals[name] or {}
+        withdrawals[name][entry.k] = withdrawals[name][entry.k] or {}
+        push(withdrawals[name][entry.k], amount, t)
+      else
+        deposits[name] = deposits[name] or {}
+        push(deposits[name], amount, t)
       end
+    end
+  end
+
+  for name, observed in pairs(deposits) do
+    local m = ns.EnsureMember(g, name)
+    local n, touched = ns.ReconcileTransactions(m.deposits, observed, nil)
+    addedD = addedD + n
+    if touched then realigned = realigned + 1 end
+  end
+
+  for name, byKind in pairs(withdrawals) do
+    local m = ns.EnsureMember(g, name)
+    for kind, observed in pairs(byKind) do
+      local n, touched = ns.ReconcileTransactions(m.withdrawals, observed, kind)
+      addedW = addedW + n
+      if touched then realigned = realigned + 1 end
     end
   end
 
