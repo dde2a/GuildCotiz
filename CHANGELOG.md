@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1 - 2026-08-06
+
+- Fixed the "Former members" toggle overlapping the rank filter button in the
+  main window. The toolbar row has no space left for another label, so the
+  toggle moved into the rank filter menu, next to the other display filters.
+
 ## 1.4.0 - 2026-08-06
 
 - Added officer-to-officer synchronization of guild bank transactions.
@@ -26,7 +32,7 @@
 - Departures are only applied when the roster read is complete, so guild members
   hidden behind the offline filter can never be mistaken for a mass exodus.
 - Rejoining the guild clears the departure without touching any history.
-- Added a "Former members" checkbox to the Summary view.
+- Added a "Former members" toggle to the rank filter menu.
 - Added `/cotiz roster` to refresh the roster and list former members, and
   `/cotiz purge [all]` to delete them.
 - Purging defaults to former members who never deposited, and detaches linked

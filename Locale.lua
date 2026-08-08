@@ -177,7 +177,6 @@ local EN = {
   HELP_PURGE = "  /cotiz purge [all]  delete former members (all = including those who deposited)",
 
   SHOW_FORMER_MEMBERS = "Former members",
-  SHOW_FORMER_MEMBERS_TIP = "Show characters who have left the guild. They stay in the database so their deposit history is preserved, but they are hidden from the table by default.",
   FORMER_MEMBER_ROW = "%s |cff888888(left)|r",
   ROSTER_SCANNED = "Roster refreshed: %d departure(s), %d return(s).",
   ROSTER_INCOMPLETE = "Incomplete roster: departures were not applied. Enable offline members in the guild window, then run /cotiz roster again.",
@@ -425,7 +424,6 @@ local FR = {
   HELP_PURGE = "  /cotiz purge [all]  supprime les anciens membres (all = y compris ceux qui ont déposé)",
 
   SHOW_FORMER_MEMBERS = "Anciens membres",
-  SHOW_FORMER_MEMBERS_TIP = "Affiche les personnages ayant quitté la guilde. Ils restent en base pour conserver leur historique de dépôts, mais sont masqués du tableau par défaut.",
   FORMER_MEMBER_ROW = "%s |cff888888(parti)|r",
   ROSTER_SCANNED = "Roster rafraîchi : %d départ(s), %d retour(s).",
   ROSTER_INCOMPLETE = "Roster incomplet : les départs n'ont pas été appliqués. Active l'affichage des membres hors ligne dans la fenêtre de guilde, puis relance /cotiz roster.",
