@@ -1710,8 +1710,8 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     if err then print("|cff33ff99GuildCotiz|r : " .. err)
     else print("|cff33ff99GuildCotiz|r : " .. L("NEW_DEPOSITS", added or 0)) end
   elseif cmd == "fix" then
-    local removed = ns.Deduplicate()
-    print("|cff33ff99GuildCotiz|r : " .. L("DUPLICATES_REMOVED", removed))
+    local kept = ns.Deduplicate()
+    print("|cff33ff99GuildCotiz|r : " .. L("INDEX_REBUILT", kept))
   elseif cmd == "export" then
     ns.ShowExport(ns.BuildSummaryCSV(), L("EXPORT_SUMMARY_TITLE"))
   elseif cmd == "roster" then

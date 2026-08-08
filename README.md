@@ -14,7 +14,8 @@ amount owed is calculated from the configured contribution per raid.
 - Bulk attendance entry for the currently displayed players.
 - Filters by player name and guild rank.
 - Historical weekly view using ISO week numbers.
-- Automatic scanning of guild bank gold deposits.
+- Automatic scanning of guild bank gold deposits, including repeated deposits
+  of the same amount.
 - Separate withdrawal history for officers.
 - Running balance showing whether a player is current, ahead or behind.
 - Weekly player details with deposits, amount owed and cumulative balance.

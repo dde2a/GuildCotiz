@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.2 - 2026-08-06
+
+- Fixed repeated deposits of the same amount being counted only once. A player
+  depositing 20,000 gold twice in the same hour now shows both deposits.
+- Guild bank scanning compares sequences instead of sets. World of Warcraft only
+  reports transaction age in whole hours, so two identical deposits are
+  indistinguishable by content; only the number of log lines separates them from
+  a single deposit read twice.
+- Officer sync applies the same reconciliation, so repeated deposits keep their
+  multiplicity when shared between officers.
+- A deposit lost to the previous behaviour is recovered on the next scan, as
+  long as it is still in the guild bank log.
+- `/cotiz fix` no longer deletes anything. It removed any transaction sharing a
+  player, amount and day with another, which is exactly what erased legitimate
+  repeated deposits. It now only re-sorts the history and rebuilds the index.
+
 ## 1.4.1 - 2026-08-06
 
 - Fixed the "Former members" toggle overlapping the rank filter button in the

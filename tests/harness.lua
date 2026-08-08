@@ -68,6 +68,17 @@ local function NewClient(charName)
   env.MAX_GUILDBANK_TABS = 8
   env.QueryGuildBankLog = function() end
 
+  -- Journal d'or simule. WoW n'exprime l'anciennete qu'en unites entieres, la
+  -- plus fine etant l'heure : deux operations faites dans la meme heure sont
+  -- rigoureusement indiscernables par leur horodatage.
+  local bank = {}
+  env.GetNumGuildBankMoneyTransactions = function() return #bank end
+  env.GetGuildBankMoneyTransaction = function(i)
+    local e = bank[i]
+    if not e then return nil end
+    return e.kind, e.name, e.gold * 10000, 0, 0, e.daysAgo or 0, e.hoursAgo or 0
+  end
+
   -- Roster simule. visibleCount modelise le piege reel de WoW : quand
   -- l'affichage des hors-ligne est coupe, GetNumGuildMembers annonce le total
   -- mais GetGuildRosterInfo n'indexe que les connectes.
@@ -100,6 +111,12 @@ local function NewClient(charName)
   end
 
   local client = { name = charName, env = env, ns = ns, comm = comm }
+  -- rows = { { kind = "deposit"|"withdraw", name =, gold =, hoursAgo =, daysAgo = } }
+  function client.SetBankLog(rows)
+    bank = {}
+    for i, r in ipairs(rows) do bank[i] = r end
+  end
+
   function client.SetRoster(names, visibleCount)
     roster.total = #names
     roster.visible = {}
