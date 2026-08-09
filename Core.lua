@@ -230,11 +230,14 @@ function ns.SetRaids(g, weekTs, name, count)
   end
 end
 
--- Total des raids d'un joueur jusqu'a untilT (semaines dont le lundi <= untilT)
-function ns.TotalRaids(g, name, untilT)
+-- Total des raids d'un joueur dans la periode demandee. La borne de debut est
+-- ramenee au lundi : la saisie est hebdomadaire, elle ne peut pas couper une
+-- semaine en deux lorsque la saison commence en milieu de semaine.
+function ns.TotalRaids(g, name, untilT, sinceT)
   local total = 0
+  local firstWeek = sinceT and ns.WeekMonday(sinceT) or nil
   for weekTs, players in pairs(g.raids) do
-    if not untilT or weekTs <= untilT then
+    if (not firstWeek or weekTs >= firstWeek) and (not untilT or weekTs <= untilT) then
       total = total + (players[name] or 0)
     end
   end
@@ -267,10 +270,10 @@ function ns.GetRaidsForGroup(g, weekTs, mainName)
   return total
 end
 
-function ns.TotalRaidsForGroup(g, mainName, untilT)
+function ns.TotalRaidsForGroup(g, mainName, untilT, sinceT)
   local total = 0
   for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
-    total = total + ns.TotalRaids(g, entry.name, untilT)
+    total = total + ns.TotalRaids(g, entry.name, untilT, sinceT)
   end
   return total
 end
@@ -338,9 +341,13 @@ function ns.GetAltCount(g, mainName)
 end
 ns.EnsureMember = EnsureMember
 
--- Debut de suivi d'un membre : override individuel sinon debut de saison
+-- Debut de suivi d'un membre. Une date individuelle peut repousser l'entree
+-- d'une recrue, jamais remonter avant la saison courante.
 function ns.MemberStart(g, m)
-  return m.startOverride or g.config.seasonStart
+  local individual = m and m.startOverride or nil
+  local season = g.config.seasonStart
+  if individual and season then return math.max(individual, season) end
+  return individual or season
 end
 
 --------------------------------------------------------------------------------
@@ -848,7 +855,7 @@ function ns.GetMemberStatus(g, m, name, now)
   name = ns.ResolveMain(g, name)
   m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
-  local raids = ns.TotalRaidsForGroup(g, name, now)
+  local raids = ns.TotalRaidsForGroup(g, name, now, startT)
   local owed = raids * perRaid
   local paid = ns.TotalPaidForGroup(g, name, now)
   local balance = paid - owed
@@ -944,7 +951,8 @@ end
 function ns.GetIndividualStatus(g, m, name, now)
   now = now or time()
   local perRaid = g.config.raidAmount or 0
-  local raids = ns.TotalRaids(g, name, now)
+  local startT = ns.MemberStart(g, m)
+  local raids = ns.TotalRaids(g, name, now, startT)
   local paid = ns.TotalPaid(g, m, now)
   local owed = raids * perRaid
   local balance = paid - owed
@@ -952,7 +960,7 @@ function ns.GetIndividualStatus(g, m, name, now)
   local raidsBehind = balance < 0 and ((perRaid > 0) and math.ceil(-balance / perRaid) or 0) or 0
   local raidsAhead = balance >= 0 and math.max(0, raidsCovered - raids) or 0
   return {
-    perRaid = perRaid, startT = ns.MemberStart(g, m), raids = raids, owed = owed,
+    perRaid = perRaid, startT = startT, raids = raids, owed = owed,
     paid = paid, balance = balance, raidsCovered = raidsCovered,
     status = balance < 0 and "retard" or (raidsAhead > 0 and "avance" or "ajour"),
     raidsBehind = raidsBehind, raidsAhead = raidsAhead, due = math.max(0, -balance),

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Changing the season start no longer charges raids entered for an older
+  season at the new contribution rate. Summary totals now count attendance
+  from the configured member/season start, while explicit historical queries
+  can still include every stored raid.
+
 ## 1.4.2 - 2026-08-06
 
 - Fixed repeated deposits of the same amount being counted only once. A player

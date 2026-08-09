@@ -6,7 +6,7 @@
 -- le NOMBRE de lignes du journal les distingue d'un unique depot relu deux fois.
 local H = dofile((arg[0]:match("^(.*)[/\\][^/\\]+$") or ".") .. "/harness.lua")
 local NewClient, Pump, ResetNetwork = H.NewClient, H.Pump, H.ResetNetwork
-local check = H.check
+local check, NOW, DAY = H.check, H.NOW, H.DAY
 
 local function Deposits(client, player)
   local m = client.g.members[player]
@@ -99,5 +99,27 @@ print("== Scenario 7 : /cotiz fix ne detruit pas de vrais depots ==")
 local removed = o.ns.Deduplicate()
 check("aucun depot legitime supprime", Deposits(o, "Karn") == 3,
   string.format("(obtenu %d, %d supprime(s))", Deposits(o, "Karn"), removed))
+
+print("== Scenario 8 : une nouvelle saison ne refacture pas les anciens raids ==")
+local s = NewClient("Saisons")
+s.SetRoster({ "Karn" })
+s.ns.ScanRoster()
+local oldWeek = s.ns.WeekMonday(NOW - 60 * DAY)
+local seasonStart = NOW - 3 * DAY
+local currentWeek = s.ns.WeekMonday(NOW - 2 * DAY)
+s.ns.SetRaids(s.g, oldWeek, "Karn", 10)
+s.ns.SetRaids(s.g, currentWeek, "Karn", 4)
+s.g.config.seasonStart = seasonStart
+s.g.members.Karn.startOverride = NOW - 120 * DAY -- ancienne date individuelle S1
+s.g.config.raidAmount = 500 * 10000
+local status = s.ns.GetMemberStatus(s.g, s.g.members.Karn, "Karn", NOW)
+check("seuls les 4 raids de la nouvelle saison comptent", status.raids == 4,
+  string.format("(obtenu %d)", status.raids))
+check("le nouveau tarif produit 2000 po dus", status.owed == 2000 * 10000,
+  string.format("(obtenu %.0f po)", status.owed / 10000))
+check("une ancienne date individuelle ne depasse pas la borne de saison",
+  status.startT == seasonStart)
+check("le total historique reste disponible explicitement",
+  s.ns.TotalRaids(s.g, "Karn", NOW) == 14)
 
 os.exit(H.report())
