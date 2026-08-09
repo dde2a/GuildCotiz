@@ -93,7 +93,7 @@ function ns.BuildWeeklyCSV(onlyPlayer, individual)
 
   local header = {
     L("CSV_PLAYER"), L("CSV_WEEK_NUMBER"), L("CSV_YEAR"), L("CSV_ISO_WEEK"),
-    L("CSV_WEEK_START"), L("CSV_WEEK_END"), L("CSV_RAIDS"), L("CSV_WEEK_DUE"),
+    L("CSV_WEEK_START"), L("CSV_WEEK_END"), L("CSV_SEASON"), L("CSV_RAIDS"), L("CSV_RAID_RATE"), L("CSV_WEEK_DUE"),
     L("CSV_DEPOSITED"), L("CSV_DEPOSIT_SOURCE"), L("CSV_CUMULATIVE_RAIDS"), L("CSV_CUMULATIVE_DUE"),
     L("CSV_CUMULATIVE_PAID"), L("CSV_END_BALANCE"), L("CSV_STATUS"),
   }
@@ -118,8 +118,8 @@ function ns.BuildWeeklyCSV(onlyPlayer, individual)
         local isoYear, isoWeek = ns.ISOWeek(r.weekStart)
         local row = {
           entry.name, r.index, isoYear, isoWeek,
-          DateStr(r.weekStart), DateStr(r.weekEnd - 1),
-          r.raids, GoldNum(r.dueWeek), GoldNum(r.deposited),
+          DateStr(r.weekStart), DateStr(r.weekEnd - 1), r.seasonName,
+          r.raids, GoldNum(r.raidAmount), GoldNum(r.dueWeek), GoldNum(r.deposited),
           r.depositOverridden and L("SOURCE_MANUAL") or L("SOURCE_BANK"),
           r.cumRaids, GoldNum(r.cumOwed), GoldNum(r.cumPaid),
           GoldNum(r.balanceEnd), StatusText(r.status),

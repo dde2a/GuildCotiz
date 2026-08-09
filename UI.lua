@@ -259,7 +259,7 @@ local function PromptWeekly()
   ShowInput(L("RAID_AMOUNT_PROMPT"), current, function(txt)
     local gold = tonumber(txt)
     if gold then
-      g.config.raidAmount = ns.GoldToCopper(gold)
+      ns.SetRatePeriod(g, g.config.seasonStart or time(), ns.GoldToCopper(gold))
       ns.RefreshUI()
     end
   end)
@@ -272,7 +272,9 @@ local function PromptStart()
   ShowInput(L("START_DATE_PROMPT"), current, function(txt)
     local y, mo, d = txt:match("(%d+)%-(%d+)%-(%d+)")
     if y then
-      g.config.seasonStart = time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 0 })
+      ns.SetRatePeriod(g,
+        time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 0 }),
+        g.config.raidAmount or 0)
       ns.RefreshUI()
     end
   end)
@@ -1193,8 +1195,8 @@ local function UpdateWeekBar()
   local g = ns.GetGuildDB(true)
   local mondayNow = ns.WeekMonday(now)
   local minOffset = 0
-  if g and g.config.seasonStart then
-    local mondayStart = ns.WeekMonday(g.config.seasonStart)
+  if g and ns.TrackingStart(g) then
+    local mondayStart = ns.WeekMonday(ns.TrackingStart(g))
     minOffset = -math.floor((mondayNow - mondayStart) / ns.WEEK_SECONDS)
   end
   if viewWeekOffset > 0 then viewWeekOffset = 0 end
@@ -1310,10 +1312,11 @@ local function BuildDisplayData(refTime)
         if altCount > 0 and expandedMains[entry.name] then
           for _, linked in ipairs(ns.GetLinkedCharacters(g, entry.name)) do
             if not linked.isMain then
-              local altPaid = ns.TotalPaid(g, linked.m, now)
+              local altStatus = ns.GetIndividualStatus(g, linked.m, linked.name, now)
+              local altPaid = altStatus.paid
               local altWeekRaids = selectedWeekMonday and ns.GetRaids(g, selectedWeekMonday, linked.name) or 0
-              local altTotalRaids = ns.TotalRaids(g, linked.name, now)
-              local altBalance = altPaid - altTotalRaids * (g.config.raidAmount or 0)
+              local altTotalRaids = altStatus.raids
+              local altBalance = altStatus.balance
               data[#data + 1] = {
                 color = nil,
                 isAltRow = true,
@@ -1677,7 +1680,7 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     local gold = tonumber(rest)
     local g = ns.GetGuildDB(true)
     if g and gold then
-      g.config.raidAmount = ns.GoldToCopper(gold)
+      ns.SetRatePeriod(g, g.config.seasonStart or time(), ns.GoldToCopper(gold))
       print("|cff33ff99GuildCotiz|r : " .. L("SET_AMOUNT_SUCCESS", gold))
       ns.RefreshUI()
     else
@@ -1687,20 +1690,22 @@ SlashCmdList["GUILDCOTIZ"] = function(msg)
     local g = ns.GetGuildDB(true)
     if g then
       local y, mo, d = rest:match("(%d+)%-(%d+)%-(%d+)")
+      local newStart
       if y then
-        g.config.seasonStart = time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 0 })
+        newStart = time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 0 })
       elseif rest:lower() == "auto" or rest:lower() == "first" then
         local e = ns.EarliestDeposit(g)
         if e then
-          g.config.seasonStart = e - (e % 86400)
+          newStart = e - (e % 86400)
         else
           print("|cff33ff99GuildCotiz|r : " .. L("NO_DEPOSIT_RECORDED"))
           return
         end
       else
         local now = time()
-        g.config.seasonStart = now - (now % 86400)
+        newStart = now - (now % 86400)
       end
+      ns.SetRatePeriod(g, newStart, g.config.raidAmount or 0)
       print("|cff33ff99GuildCotiz|r : " .. L("START_DATE_SUCCESS",
         date("%Y-%m-%d", g.config.seasonStart)))
       ns.RefreshUI()

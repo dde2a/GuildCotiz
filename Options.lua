@@ -167,7 +167,7 @@ local function RegisterOptions()
   pageScroll:SetPoint("TOPLEFT", 0, 0)
   pageScroll:SetPoint("BOTTOMRIGHT", -24, 0)
   local panel = CreateFrame("Frame", nil, pageScroll)
-  panel:SetSize(680, 1060)
+  panel:SetSize(680, 1160)
   pageScroll:SetScrollChild(panel)
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
@@ -246,17 +246,29 @@ local function RegisterOptions()
     end
   end)
 
+  local seasonsTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  seasonsTitle:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -28)
+  seasonsTitle:SetText(L("SEASONS_TITLE"))
+
+  local seasonNameLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  seasonNameLabel:SetPoint("TOPLEFT", seasonsTitle, "BOTTOMLEFT", 0, -14)
+  seasonNameLabel:SetText(L("SEASON_NAME"))
+  local seasonName = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+  seasonName:SetSize(120, 24)
+  seasonName:SetPoint("TOPLEFT", seasonNameLabel, "BOTTOMLEFT", 4, -8)
+  seasonName:SetAutoFocus(false)
+
   local amountLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  amountLabel:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -32)
-  amountLabel:SetText(L("RAID_AMOUNT_PROMPT"))
+  amountLabel:SetPoint("LEFT", seasonNameLabel, "LEFT", 180, 0)
+  amountLabel:SetText(L("SEASON_RATE"))
   local amount = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-  amount:SetSize(160, 24)
+  amount:SetSize(140, 24)
   amount:SetPoint("TOPLEFT", amountLabel, "BOTTOMLEFT", 4, -8)
   amount:SetAutoFocus(false)
 
   local dateLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  dateLabel:SetPoint("LEFT", amountLabel, "LEFT", 300, 0)
-  dateLabel:SetText(L("START_DATE_PROMPT"))
+  dateLabel:SetPoint("LEFT", seasonNameLabel, "LEFT", 390, 0)
+  dateLabel:SetText(L("SEASON_DATE"))
   local startDate = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
   startDate:SetSize(160, 24)
   startDate:SetPoint("TOPLEFT", dateLabel, "BOTTOMLEFT", 4, -8)
@@ -267,12 +279,16 @@ local function RegisterOptions()
     if not g then return end
     amount:SetText(tostring(ns.CopperToGold(g.config.raidAmount or 0)))
     startDate:SetText(g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "")
+    local periods = ns.EnsureRatePeriods(g)
+    local current = periods[#periods]
+    seasonName:SetText(current and current.name or ("S" .. (#periods + 1)))
+    if panel.RefreshSeasonList then panel.RefreshSeasonList() end
   end
 
   local save = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  save:SetSize(140, 26)
+  save:SetSize(170, 26)
   save:SetPoint("TOPLEFT", amount, "BOTTOMLEFT", 0, -14)
-  save:SetText(L("OPTIONS_SAVE"))
+  save:SetText(L("SEASON_SAVE"))
   save:SetScript("OnClick", function()
     local g = ns.GetGuildDB(true)
     if not g then return end
@@ -293,21 +309,41 @@ local function RegisterOptions()
       print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_INVALID_DATE"))
       return
     end
-    g.config.raidAmount = ns.GoldToCopper(gold)
-    g.config.seasonStart = newStart
+    local name = (seasonName:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    ns.SetRatePeriod(g, newStart, ns.GoldToCopper(gold), name ~= "" and name or nil)
     ns.SaveActiveProfile()
     ns.RefreshUI()
     amount:ClearFocus()
     startDate:ClearFocus()
+    seasonName:ClearFocus()
     panel.RefreshFields()
     print("|cff33ff99GuildCotiz|r : " .. L("OPTIONS_SAVED"))
   end)
+
+  local seasonList = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  seasonList:SetPoint("TOPLEFT", seasonsTitle, "BOTTOMLEFT", 0, -112)
+  seasonList:SetWidth(620)
+  seasonList:SetHeight(76)
+  seasonList:SetJustifyH("LEFT")
+  seasonList:SetJustifyV("TOP")
+  function panel.RefreshSeasonList()
+    local g = ns.GetGuildDB(true)
+    if not g then return end
+    local lines = {}
+    for index, period in ipairs(ns.EnsureRatePeriods(g)) do
+      local firstWeek = ns.WeekMonday(period.start)
+      if firstWeek < period.start then firstWeek = firstWeek + ns.WEEK_SECONDS end
+      lines[#lines + 1] = L("SEASON_LINE", period.name or ("S" .. index),
+        date("%Y-%m-%d", period.start), ns.FormatGold(period.amount), date("%Y-%m-%d", firstWeek))
+    end
+    seasonList:SetText(table.concat(lines, "\n"))
+  end
 
   --------------------------------------------------------------------------
   -- Synchronisation entre officiers (reglage global, hors profil de guilde)
   --------------------------------------------------------------------------
   local syncTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  syncTitle:SetPoint("TOPLEFT", save, "BOTTOMLEFT", 0, -34)
+  syncTitle:SetPoint("TOPLEFT", seasonList, "BOTTOMLEFT", 0, -24)
   syncTitle:SetText(L("SYNC_SECTION"))
 
   local syncEnable = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")

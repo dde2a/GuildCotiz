@@ -94,6 +94,7 @@ end
 local DEFAULT_CONFIG = {
   raidAmount  = 1000 * COPPER_PER_GOLD, -- cotisation due PAR RAID effectue (en cuivre)
   seasonStart = nil,                     -- timestamp de debut de suivi (defini au 1er lancement)
+  ratePeriods = {},                      -- historique { start, amount } des tarifs par saison
 }
 
 local DEFAULT_SETTINGS = {
@@ -110,6 +111,130 @@ function ns.GetGuildKey()
   if not guildName then return nil end
   realm = realm or GetRealmName() or ""
   return guildName .. "-" .. realm
+end
+
+local function NormalizeRatePeriods(g, guildKey)
+  g.config.ratePeriods = g.config.ratePeriods or {}
+  local candidates = {}
+  local function Add(startT, amount, name)
+    startT, amount = tonumber(startT), tonumber(amount)
+    if startT and startT > 0 and amount and amount >= 0 then
+      candidates[#candidates + 1] = { start = startT, amount = amount, name = name }
+    end
+  end
+
+  for _, period in ipairs(g.config.ratePeriods) do Add(period.start, period.amount, period.name) end
+  if #g.config.ratePeriods == 0 then Add(g.config.seasonStart, g.config.raidAmount) end
+
+  -- Migration 1.5 : les profils nommes peuvent contenir l'ancien tarif, meme
+  -- si les options courantes ont deja ete remplacees par celles de la S2.
+  if not g.config.ratePeriodsMigrated then
+    for _, profile in pairs((GuildCotizDB and GuildCotizDB.profiles) or {}) do
+      if not profile.guild or profile.guild == guildKey then
+        Add(profile.config and profile.config.seasonStart,
+          profile.config and profile.config.raidAmount)
+      end
+    end
+  end
+
+  table.sort(candidates, function(a, b) return a.start < b.start end)
+  local byWeek = {}
+  for _, period in ipairs(candidates) do
+    byWeek[ns.WeekMonday(period.start)] = period
+  end
+  local periods = {}
+  for _, period in pairs(byWeek) do periods[#periods + 1] = period end
+  table.sort(periods, function(a, b) return a.start < b.start end)
+
+  -- Si une activite comptable precede tous les profils retrouves, prolonge le
+  -- plus ancien tarif jusqu'a cette activite. Les depots doivent rester acquis
+  -- meme lorsqu'aucun raid n'avait encore ete saisi dans l'addon.
+  local earliestActivity
+  for weekTs in pairs(g.raids or {}) do
+    if not earliestActivity or weekTs < earliestActivity then earliestActivity = weekTs end
+  end
+  for _, member in pairs(g.members or {}) do
+    for _, deposit in ipairs(member.deposits or {}) do
+      if deposit.t and (not earliestActivity or deposit.t < earliestActivity) then
+        earliestActivity = deposit.t
+      end
+    end
+    for weekTs in pairs(member.depositOverrides or {}) do
+      if not earliestActivity or weekTs < earliestActivity then earliestActivity = weekTs end
+    end
+  end
+  if earliestActivity and periods[1]
+    and ns.WeekMonday(earliestActivity) < ns.WeekMonday(periods[1].start) then
+    table.insert(periods, 1, { start = earliestActivity, amount = periods[1].amount })
+  end
+
+  -- Les periodes consecutives au meme tarif n'ont aucune incidence distincte.
+  local compact = {}
+  for _, period in ipairs(periods) do
+    if #compact == 0 or compact[#compact].amount ~= period.amount
+      or compact[#compact].name or period.name then
+      compact[#compact + 1] = period
+    end
+  end
+  for index, period in ipairs(compact) do
+    if not period.name or period.name == "" then period.name = "S" .. index end
+  end
+  g.config.ratePeriods = compact
+  g.config.ratePeriodsMigrated = true
+end
+
+function ns.EnsureRatePeriods(g)
+  if not g or not g.config then return {} end
+  NormalizeRatePeriods(g, ns.GetGuildKey())
+  return g.config.ratePeriods
+end
+
+function ns.TrackingStart(g)
+  local periods = ns.EnsureRatePeriods(g)
+  return periods[1] and periods[1].start or g.config.seasonStart
+end
+
+function ns.RatePeriodAt(g, weekTs)
+  local periods = ns.EnsureRatePeriods(g)
+  local selected = periods[1]
+  for _, period in ipairs(periods) do
+    -- Une semaine utilise le tarif en vigueur a son lundi. Une date d'effet
+    -- placee en milieu de semaine ne modifie donc que les semaines suivantes.
+    if period.start <= weekTs then selected = period else break end
+  end
+  return selected
+end
+
+function ns.RaidAmountAt(g, weekTs)
+  local period = ns.RatePeriodAt(g, weekTs)
+  return period and period.amount or g.config.raidAmount or 0
+end
+
+function ns.SetRatePeriod(g, startT, amount, name)
+  ns.EnsureRatePeriods(g)
+  local targetWeek = ns.WeekMonday(startT)
+  local kept = {}
+  local existingName
+  for _, period in ipairs(g.config.ratePeriods) do
+    if ns.WeekMonday(period.start) ~= targetWeek then
+      kept[#kept + 1] = period
+    else
+      existingName = period.name
+    end
+  end
+  kept[#kept + 1] = {
+    start = startT,
+    amount = amount,
+    name = (name and name:gsub("^%s+", ""):gsub("%s+$", "")) or existingName
+      or ("S" .. (#kept + 1)),
+  }
+  g.config.ratePeriods = kept
+  NormalizeRatePeriods(g, ns.GetGuildKey())
+  local current = g.config.ratePeriods[#g.config.ratePeriods]
+  if current then
+    g.config.seasonStart = current.start
+    g.config.raidAmount = current.amount
+  end
 end
 
 -- Initialise la structure DB et renvoie la table de la guilde courante (ou nil)
@@ -160,6 +285,7 @@ function ns.GetGuildDB(create)
       local now = time()
       g.config.seasonStart = now - (now % (24 * 60 * 60))
     end
+    NormalizeRatePeriods(g, key)
   end
   return g
 end
@@ -278,6 +404,25 @@ function ns.TotalRaidsForGroup(g, mainName, untilT, sinceT)
   return total
 end
 
+function ns.TotalOwed(g, name, untilT, sinceT)
+  local total = 0
+  local firstWeek = sinceT and ns.WeekMonday(sinceT) or nil
+  for weekTs, players in pairs(g.raids or {}) do
+    if (not firstWeek or weekTs >= firstWeek) and (not untilT or weekTs <= untilT) then
+      total = total + (players[name] or 0) * ns.RaidAmountAt(g, weekTs)
+    end
+  end
+  return total
+end
+
+function ns.TotalOwedForGroup(g, mainName, untilT, sinceT)
+  local total = 0
+  for _, entry in ipairs(ns.GetLinkedCharacters(g, mainName)) do
+    total = total + ns.TotalOwed(g, entry.name, untilT, sinceT)
+  end
+  return total
+end
+
 --------------------------------------------------------------------------------
 -- Associations personnages principaux / rerolls
 --------------------------------------------------------------------------------
@@ -342,12 +487,12 @@ end
 ns.EnsureMember = EnsureMember
 
 -- Debut de suivi d'un membre. Une date individuelle peut repousser l'entree
--- d'une recrue, jamais remonter avant la saison courante.
+-- d'une recrue, mais un changement de tarif ne coupe jamais son historique.
 function ns.MemberStart(g, m)
   local individual = m and m.startOverride or nil
-  local season = g.config.seasonStart
-  if individual and season then return math.max(individual, season) end
-  return individual or season
+  local trackingStart = ns.TrackingStart(g)
+  if individual and trackingStart then return math.max(individual, trackingStart) end
+  return individual or trackingStart
 end
 
 --------------------------------------------------------------------------------
@@ -856,7 +1001,7 @@ function ns.GetMemberStatus(g, m, name, now)
   m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
   local raids = ns.TotalRaidsForGroup(g, name, now, startT)
-  local owed = raids * perRaid
+  local owed = ns.TotalOwedForGroup(g, name, now, startT)
   local paid = ns.TotalPaidForGroup(g, name, now)
   local balance = paid - owed
   local raidsCovered = (perRaid > 0) and math.floor(paid / perRaid) or 0
@@ -912,7 +1057,9 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
     index = index + 1
 
     local raids = ns.GetRaidsForGroup(g, ws, name)
-    local dueWeek = raids * perRaid
+    local ratePeriod = ns.RatePeriodAt(g, ws)
+    local weekRate = ratePeriod and ratePeriod.amount or g.config.raidAmount or 0
+    local dueWeek = raids * weekRate
 
     local deposited, depositOverridden = 0, false
     local depositDetails = ns.GetGroupDepositsForWeek(g, name, ws, now)
@@ -936,7 +1083,8 @@ function ns.GetWeeklyBreakdown(g, m, name, now)
 
     rows[#rows + 1] = {
       index = index, weekStart = ws, weekEnd = we,
-      raids = raids, dueWeek = dueWeek, deposited = deposited,
+      raids = raids, seasonName = ratePeriod and ratePeriod.name or "",
+      raidAmount = weekRate, dueWeek = dueWeek, deposited = deposited,
       depositOverridden = depositOverridden,
       depositDetails = depositDetails,
       cumRaids = cumRaids, cumOwed = cumOwed, cumPaid = cumPaid,
@@ -954,7 +1102,7 @@ function ns.GetIndividualStatus(g, m, name, now)
   local startT = ns.MemberStart(g, m)
   local raids = ns.TotalRaids(g, name, now, startT)
   local paid = ns.TotalPaid(g, m, now)
-  local owed = raids * perRaid
+  local owed = ns.TotalOwed(g, name, now, startT)
   local balance = paid - owed
   local raidsCovered = (perRaid > 0) and math.floor(paid / perRaid) or 0
   local raidsBehind = balance < 0 and ((perRaid > 0) and math.ceil(-balance / perRaid) or 0) or 0
@@ -979,7 +1127,9 @@ function ns.GetIndividualWeeklyBreakdown(g, m, name, now)
     local we = ws + WEEK_SECONDS
     index = index + 1
     local raids = ns.GetRaids(g, ws, name)
-    local dueWeek = raids * perRaid
+    local ratePeriod = ns.RatePeriodAt(g, ws)
+    local weekRate = ratePeriod and ratePeriod.amount or g.config.raidAmount or 0
+    local dueWeek = raids * weekRate
     local deposited, overridden = ns.GetDepositedForWeek(m, ws, startT, now)
     cumRaids = cumRaids + raids
     cumOwed = cumOwed + dueWeek
@@ -995,6 +1145,7 @@ function ns.GetIndividualWeeklyBreakdown(g, m, name, now)
     end
     rows[#rows + 1] = {
       index = index, weekStart = ws, weekEnd = we, raids = raids,
+      seasonName = ratePeriod and ratePeriod.name or "", raidAmount = weekRate,
       dueWeek = dueWeek, deposited = deposited, depositOverridden = overridden,
       depositDetails = { { name = name, m = m, amount = deposited, overridden = overridden } },
       cumRaids = cumRaids, cumOwed = cumOwed, cumPaid = cumPaid,
@@ -1109,7 +1260,7 @@ function ns.DebugDump()
     end
     p(L("DEBUG_MEMBERS"), nm, nd)
     p(L("DEBUG_CONFIG"),
-      g.config.seasonStart and date("%Y-%m-%d", g.config.seasonStart) or "?",
+      ns.TrackingStart(g) and date("%Y-%m-%d", ns.TrackingStart(g)) or "?",
       ns.FormatGold(g.config.raidAmount))
     -- detail du joueur courant
     local me = ns.ShortName(UnitName("player"))
@@ -1120,7 +1271,7 @@ function ns.DebugDump()
       for _, d in ipairs(mine.deposits) do
         p(L("DEBUG_DEPOSIT"),
           ns.FormatGold(d.a), date("%Y-%m-%d %H:%M", d.t),
-          (g.config.seasonStart and d.t >= g.config.seasonStart)
+          (ns.TrackingStart(g) and d.t >= ns.TrackingStart(g))
             and L("DEBUG_AFTER") or L("DEBUG_BEFORE"))
       end
     else

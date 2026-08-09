@@ -100,26 +100,67 @@ local removed = o.ns.Deduplicate()
 check("aucun depot legitime supprime", Deposits(o, "Karn") == 3,
   string.format("(obtenu %d, %d supprime(s))", Deposits(o, "Karn"), removed))
 
-print("== Scenario 8 : une nouvelle saison ne refacture pas les anciens raids ==")
+print("== Scenario 8 : le tarif change mais le solde reste continu entre saisons ==")
 local s = NewClient("Saisons")
 s.SetRoster({ "Karn" })
 s.ns.ScanRoster()
 local oldWeek = s.ns.WeekMonday(NOW - 60 * DAY)
-local seasonStart = NOW - 3 * DAY
 local currentWeek = s.ns.WeekMonday(NOW - 2 * DAY)
+local seasonStart = currentWeek
+s.g.config.ratePeriods = {}
+s.g.config.ratePeriodsMigrated = true
+s.ns.SetRatePeriod(s.g, oldWeek, 1000 * 10000)
 s.ns.SetRaids(s.g, oldWeek, "Karn", 10)
 s.ns.SetRaids(s.g, currentWeek, "Karn", 4)
-s.g.config.seasonStart = seasonStart
+s.ns.SetRatePeriod(s.g, seasonStart, 500 * 10000)
 s.g.members.Karn.startOverride = NOW - 120 * DAY -- ancienne date individuelle S1
-s.g.config.raidAmount = 500 * 10000
+s.g.members.Karn.deposits = { { t = oldWeek + DAY, a = 15000 * 10000 } }
 local status = s.ns.GetMemberStatus(s.g, s.g.members.Karn, "Karn", NOW)
-check("seuls les 4 raids de la nouvelle saison comptent", status.raids == 4,
+check("les 14 raids des deux saisons restent visibles", status.raids == 14,
   string.format("(obtenu %d)", status.raids))
-check("le nouveau tarif produit 2000 po dus", status.owed == 2000 * 10000,
+check("chaque saison conserve son tarif", status.owed == 12000 * 10000,
   string.format("(obtenu %.0f po)", status.owed / 10000))
-check("une ancienne date individuelle ne depasse pas la borne de saison",
-  status.startT == seasonStart)
-check("le total historique reste disponible explicitement",
-  s.ns.TotalRaids(s.g, "Karn", NOW) == 14)
+check("le credit S1 est encore disponible en S2", status.balance == 3000 * 10000,
+  string.format("(obtenu %.0f po)", status.balance / 10000))
+check("le debut de suivi reste celui de la premiere saison", status.startT == oldWeek)
+local seasonalRows = s.ns.GetWeeklyBreakdown(s.g, s.g.members.Karn, "Karn", NOW)
+check("l'historique commence en S1", seasonalRows[1] and seasonalRows[1].weekStart == oldWeek)
+
+local boundary = NewClient("DateEffet")
+boundary.SetRoster({ "Karn" })
+boundary.ns.ScanRoster()
+local beforeWeek = boundary.ns.WeekMonday(NOW - 14 * DAY)
+local effectiveWednesday = beforeWeek + 2 * DAY
+local afterWeek = beforeWeek + 7 * DAY
+boundary.g.config.ratePeriods = {}
+boundary.g.config.ratePeriodsMigrated = true
+boundary.ns.SetRatePeriod(boundary.g, beforeWeek - 30 * DAY, 1000 * 10000)
+boundary.ns.SetRatePeriod(boundary.g, effectiveWednesday, 500 * 10000)
+check("la semaine contenant la date d'effet reste a 1000 po",
+  boundary.ns.RaidAmountAt(boundary.g, beforeWeek) == 1000 * 10000)
+check("la semaine suivante passe a 500 po",
+  boundary.ns.RaidAmountAt(boundary.g, afterWeek) == 500 * 10000)
+
+print("== Scenario 9 : un depot anterieur au premier raid reste dans le solde ==")
+local m = NewClient("Migration")
+m.SetRoster({ "Karn" })
+m.ns.ScanRoster()
+local earlyDeposit = NOW - 90 * DAY
+local oldProfileStart = NOW - 70 * DAY
+m.g.members.Karn.deposits = { { t = earlyDeposit, a = 20000 * 10000 } }
+m.g.config.ratePeriods = {}
+m.g.config.ratePeriodsMigrated = false
+m.g.config.seasonStart = seasonStart
+m.g.config.raidAmount = 500 * 10000
+m.env.GuildCotizDB.profiles = {
+  Default = {
+    guild = "TestGuild-TestRealm",
+    config = { seasonStart = tostring(oldProfileStart), raidAmount = tostring(1000 * 10000) },
+  },
+}
+local migrated = m.ns.EnsureRatePeriods(m.g)
+check("la migration remonte au premier depot", migrated[1] and migrated[1].start == earlyDeposit)
+check("le tarif S1 est recupere du profil", migrated[1] and migrated[1].amount == 1000 * 10000)
+check("le depot ancien reste dans le total", m.ns.TotalPaid(m.g, m.g.members.Karn, NOW) == 20000 * 10000)
 
 os.exit(H.report())

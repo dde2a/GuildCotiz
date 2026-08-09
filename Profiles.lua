@@ -63,6 +63,10 @@ function ns.BuildProfile(scope)
   if scope == "config" or scope == "both" then
     lines[#lines + 1] = "C|raidAmount|" .. tostring(g.config.raidAmount or 0)
     lines[#lines + 1] = "C|seasonStart|" .. tostring(g.config.seasonStart or 0)
+    for _, period in ipairs(ns.EnsureRatePeriods(g)) do
+      lines[#lines + 1] = "S|" .. tostring(period.start) .. "|" .. tostring(period.amount)
+        .. "|" .. Escape(period.name or "")
+    end
     lines[#lines + 1] = "C|csvSeparator|" .. Escape((GuildCotizDB.settings or {}).csvSeparator or ";")
     lines[#lines + 1] = "C|rankRoles|1"
     AddSet(lines, "H", g.config.hiddenRanks)
@@ -86,7 +90,7 @@ function ns.ParseProfile(text)
   if text:sub(1, #PREFIX) ~= PREFIX then return nil, "PREFIX" end
   local raw = Base64Decode(text:sub(#PREFIX + 1))
   if not raw then return nil, "BASE64" end
-  local profile = { config = {}, hiddenRanks = {}, altRanks = {}, mainRanks = {}, links = {} }
+  local profile = { config = {}, ratePeriods = {}, hiddenRanks = {}, altRanks = {}, mainRanks = {}, links = {} }
   for line in raw:gmatch("[^\r\n]+") do
     local parts = {}
     for part in (line .. "|"):gmatch("(.-)|") do parts[#parts + 1] = part end
@@ -95,6 +99,13 @@ function ns.ParseProfile(text)
     elseif code == "SCOPE" then profile.scope = parts[2]
     elseif code == "GUILD" then profile.guild = Unescape(parts[2])
     elseif code == "C" then profile.config[parts[2]] = Unescape(parts[3])
+    elseif code == "S" then
+      local startT, amount = tonumber(parts[2]), tonumber(parts[3])
+      if startT and amount then
+        profile.ratePeriods[#profile.ratePeriods + 1] = {
+          start = startT, amount = amount, name = Unescape(parts[4] or ""),
+        }
+      end
     elseif code == "H" then profile.hiddenRanks[Unescape(parts[2])] = true
     elseif code == "R" then profile.altRanks[Unescape(parts[2])] = true
     elseif code == "M" then profile.mainRanks[Unescape(parts[2])] = true
@@ -117,8 +128,15 @@ function ns.ApplyProfile(profile)
   if profile.scope == "config" or profile.scope == "both" then
     local raidAmount = tonumber(profile.config.raidAmount)
     local seasonStart = tonumber(profile.config.seasonStart)
-    if raidAmount and raidAmount >= 0 then g.config.raidAmount = raidAmount end
-    if seasonStart and seasonStart > 0 then g.config.seasonStart = seasonStart end
+    if profile.ratePeriods and #profile.ratePeriods > 0 then
+      g.config.ratePeriods = CopyTable(profile.ratePeriods)
+      g.config.ratePeriodsMigrated = true
+      table.sort(g.config.ratePeriods, function(a, b) return a.start < b.start end)
+      local current = g.config.ratePeriods[#g.config.ratePeriods]
+      g.config.raidAmount, g.config.seasonStart = current.amount, current.start
+    elseif raidAmount and raidAmount >= 0 and seasonStart and seasonStart > 0 then
+      ns.SetRatePeriod(g, seasonStart, raidAmount)
+    end
     GuildCotizDB.settings.csvSeparator = profile.config.csvSeparator or ";"
     g.config.hiddenRanks = CopyTable(profile.hiddenRanks)
     g.config.altRanks = CopyTable(profile.altRanks)
@@ -164,6 +182,7 @@ local function CaptureCurrentProfile()
       csvSeparator = (GuildCotizDB.settings or {}).csvSeparator or ";",
       rankRoles = "1",
     },
+    ratePeriods = CopyTable(ns.EnsureRatePeriods(g)),
     hiddenRanks = CopyTable(g.config.hiddenRanks or {}),
     altRanks = CopyTable(g.config.altRanks or {}),
     mainRanks = CopyTable(g.config.mainRanks or {}),
@@ -256,6 +275,8 @@ function ns.ResetActiveProfile()
     local now = time()
     g.config.raidAmount = 1000 * ns.COPPER_PER_GOLD
     g.config.seasonStart = now - (now % 86400)
+    g.config.ratePeriods = { { start = g.config.seasonStart, amount = g.config.raidAmount, name = "S1" } }
+    g.config.ratePeriodsMigrated = true
     g.config.hiddenRanks = {}
     g.config.altRanks, g.config.mainRanks = {}, {}
     g.config.rankRolesInitialized = false

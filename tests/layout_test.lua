@@ -13,6 +13,22 @@
 
 local REPO = (arg[0]:match("^(.*)tests[/\\][^/\\]+$")) or "./"
 
+if not setfenv then
+  function setfenv(fn, env)
+    local index = 1
+    while true do
+      local name = debug.getupvalue(fn, index)
+      if name == "_ENV" then
+        debug.upvaluejoin(fn, index, function() return env end, 1)
+        return fn
+      elseif not name then
+        return fn
+      end
+      index = index + 1
+    end
+  end
+end
+
 local widgets = {}
 
 local FONT_HEIGHT = {

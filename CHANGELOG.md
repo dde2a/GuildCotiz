@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 - 2026-08-09
+
+- Added dated raid-rate periods so changing the contribution for a new season no longer overwrites the previous season.
+- Player balances now remain continuous across seasons: credits and debts carry forward while each raid keeps the rate applicable to its week.
+- Restored navigation and weekly history back to the earliest tracked season.
+- Added the applied per-raid rate to weekly CSV exports and shareable profiles.
+- Added migration from previously saved named profiles to recover older season rates when possible.
+- The migration now starts at the earliest recorded deposit or raid, so credits paid before the first attendance entry are never hidden by a later season date.
+- A rate takes effect only for weeks whose Monday is on or after its effective date; a mid-week date never retroactively changes that week.
+- Added an S1/S2/S3 season manager in the addon options with names, effective dates, raid rates, and the first affected week.
+
 ## 1.4.3 - 2026-08-09
 
 - Changing the season start no longer charges raids entered for an older
