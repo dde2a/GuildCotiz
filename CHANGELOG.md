@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.3 - 2026-08-09
 
 - Changing the season start no longer charges raids entered for an older
   season at the new contribution rate. Summary totals now count attendance
