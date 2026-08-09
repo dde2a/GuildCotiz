@@ -120,6 +120,13 @@ withdrawals and attendance remain in:
 Officer sync only ever carries guild bank deposits and withdrawals, and only to
 other GuildCotiz users in the same guild.
 
+## Development and releases
+
+The complete, tool-independent deployment procedure is documented in
+[PUBLISHING.md](PUBLISHING.md). A pull-request merge does not publish the addon;
+GitHub and CurseForge releases are triggered by pushing a validated `vX.Y.Z`
+tag. Coding agents should also follow `AGENTS.md` or `CLAUDE.md` as applicable.
+
 ## License
 
 GuildCotiz is distributed under the MIT License. See [LICENSE](LICENSE).

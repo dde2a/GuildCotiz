@@ -4,6 +4,9 @@ manual-changelog: CHANGELOG.md
 
 ignore:
   - .github
+  - AGENTS.md
+  - CLAUDE.md
   - assets
   - PUBLISHING.md
+  - scripts
   - tests
