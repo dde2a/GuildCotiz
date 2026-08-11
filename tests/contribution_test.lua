@@ -109,6 +109,8 @@ local currentWeek = s.ns.WeekMonday(NOW - 2 * DAY)
 local seasonStart = currentWeek
 s.g.config.ratePeriods = {}
 s.g.config.ratePeriodsMigrated = true
+s.g.config.seasonStart = oldWeek
+s.g.config.raidAmount = 1000 * 10000
 s.ns.SetRatePeriod(s.g, oldWeek, 1000 * 10000)
 s.ns.SetRaids(s.g, oldWeek, "Karn", 10)
 s.ns.SetRaids(s.g, currentWeek, "Karn", 4)
@@ -122,6 +124,11 @@ check("chaque saison conserve son tarif", status.owed == 12000 * 10000,
   string.format("(obtenu %.0f po)", status.owed / 10000))
 check("le credit S1 est encore disponible en S2", status.balance == 3000 * 10000,
   string.format("(obtenu %.0f po)", status.balance / 10000))
+check("l'avance est calculee depuis le solde au tarif S2", status.raidsAhead == 6,
+  string.format("(obtenu %d raid(s))", status.raidsAhead))
+local individualStatus = s.ns.GetIndividualStatus(s.g, s.g.members.Karn, "Karn", NOW)
+check("le statut individuel utilise aussi le solde", individualStatus.raidsAhead == 6,
+  string.format("(obtenu %d raid(s))", individualStatus.raidsAhead))
 check("le debut de suivi reste celui de la premiere saison", status.startT == oldWeek)
 local seasonalRows = s.ns.GetWeeklyBreakdown(s.g, s.g.members.Karn, "Karn", NOW)
 check("l'historique commence en S1", seasonalRows[1] and seasonalRows[1].weekStart == oldWeek)

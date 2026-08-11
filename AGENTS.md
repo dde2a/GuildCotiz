@@ -1,7 +1,8 @@
 # Instructions for coding agents
 
-Read `PUBLISHING.md` before changing versions, creating tags or publishing
-GuildCotiz.
+Read `DEVELOPMENT.md` before modifying GuildCotiz. It defines the architecture,
+accounting rules, data-safety invariants, tests and local validation workflow.
+Read `PUBLISHING.md` before changing versions, creating tags or publishing.
 
 - A merged pull request is not a release.
 - Releases are triggered only by pushing an annotated `vX.Y.Z` tag.

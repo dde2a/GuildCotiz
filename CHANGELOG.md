@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 - 2026-08-11
+
+- Fixed the ahead/behind raid count after a season rate change. Remaining
+  balance is now converted using the latest configured raid rate instead of
+  reconverting all historical deposits at that rate.
+
 ## 1.5.0 - 2026-08-09
 
 - Added dated raid-rate periods so changing the contribution for a new season no longer overwrites the previous season.

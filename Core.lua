@@ -210,6 +210,15 @@ function ns.RaidAmountAt(g, weekTs)
   return period and period.amount or g.config.raidAmount or 0
 end
 
+-- Tarif de reference pour exprimer un solde en nombre de prochains raids.
+-- Il s'agit de la derniere saison configuree, y compris lorsqu'elle prend effet
+-- prochainement. Le champ legacy raidAmount peut etre stale apres migration.
+function ns.LatestRaidAmount(g)
+  local periods = ns.EnsureRatePeriods(g)
+  local latest = periods[#periods]
+  return latest and latest.amount or g.config.raidAmount or 0
+end
+
 function ns.SetRatePeriod(g, startT, amount, name)
   ns.EnsureRatePeriods(g)
   local targetWeek = ns.WeekMonday(startT)
@@ -996,7 +1005,7 @@ end
 -- name : nom court du joueur (necessaire pour retrouver ses raids)
 function ns.GetMemberStatus(g, m, name, now)
   now = now or time()
-  local perRaid = g.config.raidAmount or 0
+  local perRaid = ns.LatestRaidAmount(g)
   name = ns.ResolveMain(g, name)
   m = g.members[name] or m
   local startT = ns.MemberStart(g, m)
@@ -1009,7 +1018,11 @@ function ns.GetMemberStatus(g, m, name, now)
   local status, raidsBehind, raidsAhead, due
   if balance >= 0 then
     raidsBehind = 0
-    raidsAhead = math.max(0, raidsCovered - raids)
+    -- Avec plusieurs tarifs historiques, convertir tout le montant depose au
+    -- tarif courant puis retirer tous les raids melange les saisons. L'avance
+    -- est le credit restant, deja net de la dette historique, converti au
+    -- tarif courant (ex. 8 000 po de solde / 500 po = 16 raids d'avance).
+    raidsAhead = (perRaid > 0) and math.floor(balance / perRaid) or 0
     due = 0
     status = (raidsAhead > 0) and "avance" or "ajour"
   else
@@ -1098,7 +1111,7 @@ end
 -- Statut et detail propres a un seul personnage, sans fusion avec son main.
 function ns.GetIndividualStatus(g, m, name, now)
   now = now or time()
-  local perRaid = g.config.raidAmount or 0
+  local perRaid = ns.LatestRaidAmount(g)
   local startT = ns.MemberStart(g, m)
   local raids = ns.TotalRaids(g, name, now, startT)
   local paid = ns.TotalPaid(g, m, now)
@@ -1106,7 +1119,7 @@ function ns.GetIndividualStatus(g, m, name, now)
   local balance = paid - owed
   local raidsCovered = (perRaid > 0) and math.floor(paid / perRaid) or 0
   local raidsBehind = balance < 0 and ((perRaid > 0) and math.ceil(-balance / perRaid) or 0) or 0
-  local raidsAhead = balance >= 0 and math.max(0, raidsCovered - raids) or 0
+  local raidsAhead = balance >= 0 and ((perRaid > 0) and math.floor(balance / perRaid) or 0) or 0
   return {
     perRaid = perRaid, startT = startT, raids = raids, owed = owed,
     paid = paid, balance = balance, raidsCovered = raidsCovered,

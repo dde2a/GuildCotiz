@@ -122,10 +122,12 @@ other GuildCotiz users in the same guild.
 
 ## Development and releases
 
-The complete, tool-independent deployment procedure is documented in
-[PUBLISHING.md](PUBLISHING.md). A pull-request merge does not publish the addon;
-GitHub and CurseForge releases are triggered by pushing a validated `vX.Y.Z`
-tag. Coding agents should also follow `AGENTS.md` or `CLAUDE.md` as applicable.
+Architecture, accounting invariants, tests and the local WoW workflow are
+documented in [DEVELOPMENT.md](DEVELOPMENT.md). The complete, tool-independent
+deployment procedure is in [PUBLISHING.md](PUBLISHING.md). A pull-request merge
+does not publish the addon; GitHub and CurseForge releases are triggered by
+pushing a validated `vX.Y.Z` tag. Coding agents should also follow `AGENTS.md`
+or `CLAUDE.md` as applicable.
 
 ## License
 

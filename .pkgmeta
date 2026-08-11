@@ -6,6 +6,7 @@ ignore:
   - .github
   - AGENTS.md
   - CLAUDE.md
+  - DEVELOPMENT.md
   - assets
   - PUBLISHING.md
   - scripts
