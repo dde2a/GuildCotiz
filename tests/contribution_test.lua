@@ -170,4 +170,29 @@ check("la migration remonte au premier depot", migrated[1] and migrated[1].start
 check("le tarif S1 est recupere du profil", migrated[1] and migrated[1].amount == 1000 * 10000)
 check("le depot ancien reste dans le total", m.ns.TotalPaid(m.g, m.g.members.Karn, NOW) == 20000 * 10000)
 
+print("== Scenario 10 : un depot de la semaine courante peut etre reparti immediatement ==")
+local split = NewClient("Repartition")
+split.SetRoster({ "Jilannadh", "Ami" })
+split.ns.ScanRoster()
+local splitWeek = split.ns.WeekMonday(NOW)
+split.g.config.ratePeriods = {}
+split.g.config.ratePeriodsMigrated = true
+split.g.config.seasonStart = splitWeek - 30 * DAY
+split.g.config.raidAmount = 500 * 10000
+split.ns.SetRatePeriod(split.g, splitWeek - 30 * DAY, 500 * 10000)
+split.g.members.Jilannadh.deposits = { { t = NOW - 60, a = 14000 * 10000 } }
+split.ns.SetDepositOverride(split.g.members.Jilannadh, splitWeek, 9000 * 10000)
+split.ns.SetDepositOverride(split.g.members.Ami, splitWeek, 5000 * 10000)
+local donorRows = split.ns.GetIndividualWeeklyBreakdown(
+  split.g, split.g.members.Jilannadh, "Jilannadh", NOW)
+local friendRows = split.ns.GetIndividualWeeklyBreakdown(
+  split.g, split.g.members.Ami, "Ami", NOW)
+check("Jilannadh affiche 9000 po cette semaine",
+  donorRows[#donorRows] and donorRows[#donorRows].deposited == 9000 * 10000)
+check("son ami affiche 5000 po cette semaine",
+  friendRows[#friendRows] and friendRows[#friendRows].deposited == 5000 * 10000)
+check("la repartition conserve les 14000 po",
+  split.ns.TotalPaid(split.g, split.g.members.Jilannadh, NOW)
+    + split.ns.TotalPaid(split.g, split.g.members.Ami, NOW) == 14000 * 10000)
+
 os.exit(H.report())

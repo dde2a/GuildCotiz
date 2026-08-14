@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.2 - 2026-08-14
+
+- Added weekly deposit editing directly from the summary table for the selected
+  week, including the current week and expanded alt rows. The displayed total
+  remains cumulative while the pencil edits only the selected week's amount.
+
 ## 1.5.1 - 2026-08-11
 
 - Fixed the ahead/behind raid count after a season rate change. Remaining

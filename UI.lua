@@ -38,7 +38,7 @@ local COLUMNS = {
     -- colonne editable : nb de raids du joueur sur la semaine selectionnee
     { key = "raidsWeek", title = L("COL_RAIDS_WEEK"),  x = 252, w = 64,  justify = "CENTER", edit = "raid" },
     { key = "raidsTot",  title = L("COL_RAIDS_TOTAL"), x = 320, w = 62,  justify = "RIGHT" },
-    { key = "paid",      title = L("COL_DEPOSITED"),   x = 388, w = 88,  justify = "RIGHT" },
+    { key = "paid",      title = L("COL_DEPOSITED"),   x = 388, w = 88,  justify = "RIGHT", edit = "deposit" },
     { key = "balance",   title = L("COL_BALANCE"),     x = 482, w = 88,  justify = "RIGHT" },
     { key = "status",    title = L("COL_STATUS"),      x = 576, w = 138, justify = "LEFT" },
   },
@@ -1281,6 +1281,13 @@ local function BuildDisplayData(refTime)
           statusStr = L("CURRENT")
         end
         local weekRaids = selectedWeekMonday and ns.GetRaids(g, selectedWeekMonday, entry.name) or 0
+        local weekDeposited, weekDepositOverridden = 0, false
+        if selectedWeekMonday then
+          for _, detail in ipairs(ns.GetGroupDepositsForWeek(g, entry.name, selectedWeekMonday, now)) do
+            weekDeposited = weekDeposited + detail.amount
+            if detail.overridden then weekDepositOverridden = true end
+          end
+        end
         local altCount = ns.GetAltCount(g, entry.name)
         local mainSortValues = {
           name = entry.name, rank = entry.m.rankName or "?", raidsWeek = weekRaids,
@@ -1291,7 +1298,14 @@ local function BuildDisplayData(refTime)
           click = entry.name,
           player = entry.name,
           raidsWeek = weekRaids,
+          member = entry.m,
           mainName = entry.name,
+          playerName = entry.name,
+          isGroupDetail = true,
+          weekTs = selectedWeekMonday,
+          deposited = weekDeposited,
+          depositOverridden = weekDepositOverridden,
+          depositDisplay = ns.FormatGold(s.paid),
           altCount = altCount,
           expanded = expandedMains[entry.name] or false,
           sortValues = mainSortValues,
@@ -1315,6 +1329,11 @@ local function BuildDisplayData(refTime)
               local altStatus = ns.GetIndividualStatus(g, linked.m, linked.name, now)
               local altPaid = altStatus.paid
               local altWeekRaids = selectedWeekMonday and ns.GetRaids(g, selectedWeekMonday, linked.name) or 0
+              local altWeekDeposited, altWeekOverridden = 0, false
+              if selectedWeekMonday then
+                altWeekDeposited, altWeekOverridden = ns.GetDepositedForWeek(
+                  linked.m, selectedWeekMonday, ns.MemberStart(g, linked.m), now)
+              end
               local altTotalRaids = altStatus.raids
               local altBalance = altStatus.balance
               data[#data + 1] = {
@@ -1325,6 +1344,13 @@ local function BuildDisplayData(refTime)
                 click = linked.name,
                 player = linked.name,
                 raidsWeek = altWeekRaids,
+                member = linked.m,
+                playerName = linked.name,
+                isGroupDetail = false,
+                weekTs = selectedWeekMonday,
+                deposited = altWeekDeposited,
+                depositOverridden = altWeekOverridden,
+                depositDisplay = ns.FormatGold(altPaid),
                 sortValues = mainSortValues,
                 sortGroup = entry.name,
                 sortChild = 1,
@@ -1568,7 +1594,8 @@ function UI.Refresh(scrollOnly)
             cell:SetPoint("LEFT", row, "LEFT", col.x, 0)
             cell:SetWidth(col.w - 22)
             cell:SetJustifyH(col.justify)
-            cell:SetText(row.DepositText(item.deposited or 0, item.depositOverridden))
+            cell:SetText(item.depositDisplay
+              or row.DepositText(item.deposited or 0, item.depositOverridden))
             cell:SetTextColor(r, gg, b)
             cell:Show()
             row.depositEdit:Hide()
@@ -1594,7 +1621,9 @@ function UI.Refresh(scrollOnly)
           end
         end
         if mode ~= "summary" then row.raidEdit:Hide() end
-        if mode ~= "detail" then
+        -- Le depot est editable dans le detail et dans le resume pour la
+        -- semaine selectionnee. Seul l'onglet Retraits ne propose pas ce crayon.
+        if mode == "withdraw" then
           row.depositEdit:Hide()
           row.depositPencil:Hide()
         end
