@@ -36,6 +36,7 @@ When a Lua interpreter is available, run:
 lua tests/roster_test.lua
 lua tests/sync_test.lua
 lua tests/contribution_test.lua
+lua tests/grm_test.lua
 lua tests/layout_test.lua
 ```
 

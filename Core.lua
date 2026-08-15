@@ -495,6 +495,83 @@ function ns.GetAltCount(g, mainName)
 end
 ns.EnsureMember = EnsureMember
 
+--------------------------------------------------------------------------------
+-- Import en lecture seule depuis Guild Roster Manager (GRM)
+--------------------------------------------------------------------------------
+
+function ns.IsGRMAvailable()
+  return type(GRM) == "table" and type(GRM.GetPlayerMain) == "function"
+end
+
+-- Construit un apercu sans modifier GuildCotiz ni les donnees de GRM.
+function ns.BuildGRMImportPreview(g)
+  if not g or not ns.IsGRMAvailable() then return nil, "unavailable" end
+  local preview = { links = {}, new = 0, changed = 0, unchanged = 0, skipped = 0 }
+  local resolved, designatedMains = {}, {}
+
+  for characterName, member in pairs(g.members or {}) do
+    local queryName = member.fullName or characterName
+    local ok, grmMain = pcall(GRM.GetPlayerMain, queryName)
+    if ok and type(grmMain) == "string" and grmMain ~= "" then
+      local mainName = ns.ShortName(grmMain)
+      resolved[characterName] = { main = mainName, queryName = queryName, grmMain = grmMain }
+      if mainName == characterName then designatedMains[characterName] = true end
+    end
+  end
+
+  -- Un main GRM ne doit pas rester reroll d'un ancien mapping GuildCotiz.
+  for mainName in pairs(designatedMains) do
+    if g.altToMain and g.altToMain[mainName] then
+      preview.changed = preview.changed + 1
+      preview.links[#preview.links + 1] = {
+        alt = mainName, main = nil, state = "changed", unlinksMain = true,
+      }
+    end
+  end
+
+  for altName, result in pairs(resolved) do
+    local mainName = result.main
+    if mainName ~= altName then
+      if g.members[mainName] then
+        local existing = g.altToMain and g.altToMain[altName] or nil
+        local state = not existing and "new"
+          or (ns.ResolveMain(g, existing) == mainName and "unchanged" or "changed")
+        preview[state] = preview[state] + 1
+        preview.links[#preview.links + 1] = {
+          alt = altName, main = mainName, state = state,
+          altFullName = result.queryName, mainFullName = result.grmMain,
+        }
+      else
+        preview.skipped = preview.skipped + 1
+      end
+    end
+  end
+
+  table.sort(preview.links, function(a, b) return a.alt:lower() < b.alt:lower() end)
+  return preview
+end
+
+function ns.ApplyGRMImport(g, preview)
+  if not g or not preview or type(preview.links) ~= "table" then return 0 end
+  local applied = 0
+  -- Libere d'abord les mains GRM afin que SetCharacterMain ne les resolve pas
+  -- encore vers un ancien main GuildCotiz lors de la seconde passe.
+  for _, link in ipairs(preview.links) do
+    if link.unlinksMain and g.members[link.alt] then
+      local ok = ns.SetCharacterMain(g, link.alt, nil)
+      if ok then applied = applied + 1 end
+    end
+  end
+  for _, link in ipairs(preview.links) do
+    if not link.unlinksMain and link.state ~= "unchanged" and g.members[link.alt]
+      and (link.main == nil or g.members[link.main]) then
+      local ok = ns.SetCharacterMain(g, link.alt, link.main)
+      if ok then applied = applied + 1 end
+    end
+  end
+  return applied
+end
+
 -- Debut de suivi d'un membre. Une date individuelle peut repousser l'entree
 -- d'une recrue, mais un changement de tarif ne coupe jamais son historique.
 function ns.MemberStart(g, m)
@@ -530,6 +607,9 @@ function ns.ScanRoster()
     if name then
       local short = ns.ShortName(name)
       local m = EnsureMember(g, short)
+      -- GuildCotiz utilise le nom court comme cle, mais les integrations
+      -- inter-royaumes ont besoin du nom complet Personnage-Royaume.
+      m.fullName = name
       m.rankName = rankName or m.rankName
       m.rankIndex = rankIndex or m.rankIndex
       if note and note ~= "" then m.note = note end

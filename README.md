@@ -21,6 +21,8 @@ amount owed is calculated from the configured contribution per raid.
 - Weekly player details with deposits, amount owed and cumulative balance.
 - CSV exports for Excel and Google Sheets.
 - Officer-to-officer sync of guild bank transactions.
+- Optional read-only import of main/alt associations from Guild Roster Manager
+  (GRM), including cross-realm guild members.
 - Automatic detection of members who left the guild, hidden from the table
   while their deposit history is preserved.
 - Automatic French or English interface based on the WoW client language.

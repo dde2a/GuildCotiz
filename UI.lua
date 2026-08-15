@@ -319,6 +319,28 @@ local function PromptDepositCorrection(item)
 end
 
 local altDialog
+local RefreshAltDialog
+
+local function ConfirmGRMImport(dialog, g, preview)
+  local key = "GUILDCOTIZ_GRM_IMPORT"
+  StaticPopupDialogs[key] = {
+    text = L("GRM_CONFIRM", preview.new, preview.changed),
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+    OnAccept = function(_, data)
+      local applied = ns.ApplyGRMImport(data.g, data.preview)
+      print("|cff33ff99GuildCotiz|r : " .. L("GRM_IMPORTED", applied))
+      data.dialog.suggestionText:SetText(L("GRM_IMPORTED", applied))
+      RefreshAltDialog()
+      UI.Refresh()
+    end,
+  }
+  StaticPopup_Show(key, nil, nil, { dialog = dialog, g = g, preview = preview })
+end
 
 local function FindKnownName(g, text)
   text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -478,7 +500,7 @@ local function AddMemberAutocomplete(dialog, edit, predicate)
   edit.suggestionList = list
 end
 
-local function RefreshAltDialog()
+RefreshAltDialog = function()
   if not altDialog then return end
   local g = ns.GetGuildDB(true)
   if not g then return end
@@ -501,7 +523,7 @@ end
 local function GetAltDialog()
   if altDialog then return altDialog end
   local d = CreateFrame("Frame", "GuildCotizAltDialog", UIParent, "BackdropTemplate")
-  d:SetSize(560, 330)
+  d:SetSize(560, 365)
   d:SetPoint("CENTER")
   d:SetFrameStrata("FULLSCREEN_DIALOG")
   d:SetToplevel(true)
@@ -623,20 +645,43 @@ local function GetAltDialog()
     ))
   end)
 
+  local importGRM = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
+  importGRM:SetSize(180, 24)
+  importGRM:SetPoint("TOPLEFT", 30, -184)
+  importGRM:SetText(L("GRM_IMPORT"))
+  importGRM:SetScript("OnClick", function()
+    local g = ns.GetGuildDB(true)
+    if not g then return end
+    local preview = ns.BuildGRMImportPreview(g)
+    if not preview then
+      d.suggestionText:SetText(L("GRM_NOT_AVAILABLE"))
+      return
+    end
+    d.suggestionText:SetText(L(
+      "GRM_PREVIEW", preview.new, preview.changed, preview.unchanged, preview.skipped
+    ))
+    if preview.new + preview.changed == 0 then
+      d.suggestionText:SetText(L("GRM_NO_LINKS"))
+      return
+    end
+    ConfirmGRMImport(d, g, preview)
+  end)
+  d.importGRM = importGRM
+
   local suggestionText = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  suggestionText:SetPoint("TOPLEFT", 30, -184)
-  suggestionText:SetPoint("TOPRIGHT", -30, -184)
+  suggestionText:SetPoint("TOPLEFT", 30, -216)
+  suggestionText:SetPoint("TOPRIGHT", -30, -216)
   suggestionText:SetJustifyH("LEFT")
   d.suggestionText = suggestionText
 
   local progressText = d:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  progressText:SetPoint("TOPLEFT", 30, -207)
-  progressText:SetPoint("TOPRIGHT", -30, -207)
+  progressText:SetPoint("TOPLEFT", 30, -239)
+  progressText:SetPoint("TOPRIGHT", -30, -239)
   progressText:SetJustifyH("LEFT")
   d.progressText = progressText
 
   local mappingText = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  mappingText:SetPoint("TOPLEFT", 30, -230)
+  mappingText:SetPoint("TOPLEFT", 30, -262)
   mappingText:SetPoint("BOTTOMRIGHT", -30, 28)
   mappingText:SetJustifyH("LEFT")
   mappingText:SetJustifyV("TOP")

@@ -37,6 +37,8 @@ running balance        = all deposits to date - all amounts owed to date
 - `Theme.lua`: shared visual theme and widget styling.
 - `Profiles.lua`: named profiles and the `GC1` import/export format.
 - `Sync.lua`: officer-to-officer transaction synchronization through AceComm.
+- Optional GRM integration in `Core.lua`: read-only main/alt import using
+  `GRM.GetPlayerMain`; never write to GRM globals or SavedVariables.
 - `Export.lua`: CSV builders and copyable export window.
 - `UI.lua`: main window and tables.
 - `Options.lua`: WoW Settings panel.
@@ -130,6 +132,7 @@ Preferred commands with Lua 5.1:
 lua tests/roster_test.lua
 lua tests/sync_test.lua
 lua tests/contribution_test.lua
+lua tests/grm_test.lua
 lua tests/layout_test.lua
 git diff --check
 ```
@@ -140,6 +143,7 @@ If native Lua is unavailable, use Fengari:
 npx --yes --package=fengari-node-cli fengari tests/roster_test.lua
 npx --yes --package=fengari-node-cli fengari tests/sync_test.lua
 npx --yes --package=fengari-node-cli fengari tests/contribution_test.lua
+npx --yes --package=fengari-node-cli fengari tests/grm_test.lua
 npx --yes --package=fengari-node-cli fengari tests/layout_test.lua
 ```
 

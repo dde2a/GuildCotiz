@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0 - 2026-08-15
+
+- Added an optional, read-only import of main/alt associations from Guild Roster
+  Manager (GRM), with cross-realm character support, preview and confirmation.
+- GRM data is never modified; GuildCotiz stores its own copy of accepted links.
+
 ## 1.5.2 - 2026-08-14
 
 - Added weekly deposit editing directly from the summary table for the selected

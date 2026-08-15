@@ -51,6 +51,7 @@ $testFiles = @(
     "tests/roster_test.lua",
     "tests/sync_test.lua",
     "tests/contribution_test.lua",
+    "tests/grm_test.lua",
     "tests/layout_test.lua"
 )
 $lua = Get-Command lua -ErrorAction SilentlyContinue
