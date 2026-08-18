@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.1 - 2026-08-18
+
+- Fixed the client freezes that occurred while the guild bank log was loading or
+  the guild roster was refreshing with the GuildCotiz window open. On a large
+  guild the summary view was rebuilt in full on every event, at a cost growing
+  as the square of the member count.
+- Rebuilding the summary view is now proportional to the number of members:
+  season normalization and main/alt grouping are computed once per change
+  instead of once per member and per week.
+- The window is refreshed only when the data actually changed, and guild bank
+  log events arriving in quick succession are handled once.
+- Stored data, accounting rules and season history are unchanged.
+
 ## 1.6.0 - 2026-08-15
 
 - Added an optional, read-only import of main/alt associations from Guild Roster
