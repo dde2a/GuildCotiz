@@ -1727,9 +1727,12 @@ function UI.Toggle()
   if mainFrame:IsShown() then
     mainFrame:Hide()
   else
-    mainFrame:Show()
+    -- Le scan precede l'affichage : la fenetre encore masquee, le
+    -- rafraichissement interne de ScanRoster ne coute rien, et la vue n'est
+    -- reconstruite qu'une seule fois, juste apres.
     if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
     ns.ScanRoster()
+    mainFrame:Show()
     UI.Refresh()
   end
 end

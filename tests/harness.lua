@@ -190,6 +190,9 @@ local function AddDeposit(client, player, goldAmount, t)
   local m = client.ns.EnsureMember(client.g, player)
   table.insert(m.deposits, { t = t, a = goldAmount * 10000 })
   client.g.seen[client.ns.DedupKey(player, goldAmount * 10000, t)] = true
+  -- Ce raccourci ecrit dans la base sans passer par ScanBankLog ni par la
+  -- synchro : il doit invalider les caches lui-meme, comme le font ces deux-la.
+  client.ns.InvalidateCaches()
 end
 
 local function AddWithdrawal(client, player, goldAmount, t)

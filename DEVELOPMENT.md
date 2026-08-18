@@ -42,7 +42,7 @@ running balance        = all deposits to date - all amounts owed to date
 - `Export.lua`: CSV builders and copyable export window.
 - `UI.lua`: main window and tables.
 - `Options.lua`: WoW Settings panel.
-- `tests/`: standalone regression and layout tests.
+- `tests/`: standalone regression, cache and layout tests.
 - `scripts/release.ps1`: release preflight and tag publication.
 
 Keep new user-facing text in `Locale.lua`, and preserve key parity between the
@@ -76,6 +76,32 @@ Profiles include configuration, rank classification and rate periods when the
 corresponding export option is enabled. Profiles never contain bank
 transactions, manual corrections or attendance history. Continue accepting
 older version-1 profile records; season records use `start|amount|name`.
+
+## Derived caches
+
+Two derived caches keep a summary refresh linear in the number of members. Both
+live in memory only, are keyed by the guild table, and are dropped on reload;
+nothing derived is ever written to SavedVariables.
+
+- Season normalization (`NormalizeRatePeriods`) scans every member and every
+  deposit to find the earliest accounting activity, which may push the tracking
+  start backwards. Its result is reused until the next accounting write.
+- The main/alt group index backs `GuildCotiz.GetLinkedCharacters`, which the
+  summary view calls five times per member.
+
+Both are invalidated by a single counter through `GuildCotiz.InvalidateCaches()`.
+Call it after any write to deposits, withdrawals, attendance, manual
+corrections, rates, main/alt links, or after adding or removing a member. A
+cache kept too long is an accounting bug, not a display bug: the tracking start
+would stop moving back and deposits older than the first season would silently
+drop out of the totals. `tests/cache_test.lua` covers each write path with an
+already-warm cache.
+
+Scans and roster reads refresh the UI only when data actually changed:
+`ScanBankLog` returns a fourth value saying whether anything moved (new
+transactions or realigned timestamps), and `ScanRoster` compares before writing.
+`GUILDBANKLOG_UPDATE` events are coalesced through a short timer, since the
+server emits several while the log loads.
 
 ## Data-safety invariants
 
@@ -133,6 +159,7 @@ lua tests/roster_test.lua
 lua tests/sync_test.lua
 lua tests/contribution_test.lua
 lua tests/grm_test.lua
+lua tests/cache_test.lua
 lua tests/layout_test.lua
 git diff --check
 ```
@@ -144,6 +171,7 @@ npx --yes --package=fengari-node-cli fengari tests/roster_test.lua
 npx --yes --package=fengari-node-cli fengari tests/sync_test.lua
 npx --yes --package=fengari-node-cli fengari tests/contribution_test.lua
 npx --yes --package=fengari-node-cli fengari tests/grm_test.lua
+npx --yes --package=fengari-node-cli fengari tests/cache_test.lua
 npx --yes --package=fengari-node-cli fengari tests/layout_test.lua
 ```
 
