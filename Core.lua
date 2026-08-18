@@ -183,9 +183,36 @@ local function NormalizeRatePeriods(g, guildKey)
   g.config.ratePeriodsMigrated = true
 end
 
+-- La normalisation ci-dessus balaie tous les membres et tous leurs depots pour
+-- retrouver la plus ancienne activite comptable. La rejouer a chaque lecture de
+-- tarif revenait a parcourir la guilde entiere par membre et par semaine : la
+-- vue Resume la relancait des dizaines de milliers de fois. Le resultat est
+-- donc conserve jusqu'a la prochaine ecriture comptable.
+--
+-- Le compteur est volontairement grossier : une seule ecriture invalide le
+-- cache de toutes les guildes connues. Renormaliser une fois de trop ne coute
+-- qu'un balayage, alors qu'un cache conserve trop longtemps ferait sortir du
+-- calcul les depots anterieurs a la premiere saison. Rien n'est ecrit dans les
+-- SavedVariables : une nouvelle session renormalise toujours au premier acces.
+local accountingRev = 0
+local normalizedRev = setmetatable({}, { __mode = "k" })
+
+-- A appeler apres toute ecriture de depot, de presence, de correction manuelle,
+-- de tarif, de lien main/reroll, ou apres l'ajout ou le retrait d'un membre.
+function ns.InvalidateCaches()
+  accountingRev = accountingRev + 1
+end
+
+local function EnsureNormalized(g, guildKey)
+  if normalizedRev[g] ~= accountingRev then
+    NormalizeRatePeriods(g, guildKey or ns.GetGuildKey())
+    normalizedRev[g] = accountingRev
+  end
+end
+
 function ns.EnsureRatePeriods(g)
   if not g or not g.config then return {} end
-  NormalizeRatePeriods(g, ns.GetGuildKey())
+  EnsureNormalized(g)
   return g.config.ratePeriods
 end
 
@@ -238,7 +265,8 @@ function ns.SetRatePeriod(g, startT, amount, name)
       or ("S" .. (#kept + 1)),
   }
   g.config.ratePeriods = kept
-  NormalizeRatePeriods(g, ns.GetGuildKey())
+  ns.InvalidateCaches()
+  EnsureNormalized(g)
   local current = g.config.ratePeriods[#g.config.ratePeriods]
   if current then
     g.config.seasonStart = current.start
@@ -283,6 +311,7 @@ function ns.GetGuildDB(create)
     end
     g.groupDepositOverrides = {}
     g.groupOverridesMigratedToMembers = true
+    ns.InvalidateCaches()
   end
   if g.config then
     -- migration : l'ancienne cotisation hebdomadaire devient la cotisation par raid
@@ -294,7 +323,7 @@ function ns.GetGuildDB(create)
       local now = time()
       g.config.seasonStart = now - (now % (24 * 60 * 60))
     end
-    NormalizeRatePeriods(g, key)
+    EnsureNormalized(g, key)
   end
   return g
 end
@@ -363,6 +392,8 @@ function ns.SetRaids(g, weekTs, name, count)
     g.raids[weekTs] = g.raids[weekTs] or {}
     g.raids[weekTs][name] = count
   end
+  -- La plus ancienne semaine de raid peut reculer le debut de suivi.
+  ns.InvalidateCaches()
 end
 
 -- Total des raids d'un joueur dans la periode demandee. La borne de debut est
@@ -388,6 +419,7 @@ local function EnsureMember(g, shortName)
   if not m then
     m = { rankName = "?", rankIndex = 99, note = "", officerNote = "", startOverride = nil, active = false }
     g.members[shortName] = m
+    ns.InvalidateCaches()
   end
   -- init paresseuse (compatibilite avec les donnees enregistrees avant les retraits)
   m.deposits = m.deposits or {}
@@ -417,8 +449,11 @@ function ns.TotalOwed(g, name, untilT, sinceT)
   local total = 0
   local firstWeek = sinceT and ns.WeekMonday(sinceT) or nil
   for weekTs, players in pairs(g.raids or {}) do
-    if (not firstWeek or weekTs >= firstWeek) and (not untilT or weekTs <= untilT) then
-      total = total + (players[name] or 0) * ns.RaidAmountAt(g, weekTs)
+    local count = players[name]
+    -- Chercher le tarif d'une semaine sans raid n'ajoute jamais rien au total.
+    if count and count > 0
+      and (not firstWeek or weekTs >= firstWeek) and (not untilT or weekTs <= untilT) then
+      total = total + count * ns.RaidAmountAt(g, weekTs)
     end
   end
   return total
@@ -439,12 +474,15 @@ end
 -- Renvoie le main final d'un personnage. La protection visited evite toute boucle.
 function ns.ResolveMain(g, name)
   if not g or not name then return name end
-  g.altToMain = g.altToMain or {}
+  local links = g.altToMain
+  -- Sortie immediate pour un personnage sans lien, c'est-a-dire l'immense
+  -- majorite des membres : la table visited n'a alors aucune raison d'exister.
+  if not links or not links[name] then return name end
   local current = name
   local visited = {}
-  while g.altToMain[current] and not visited[current] do
+  while links[current] and not visited[current] do
     visited[current] = true
-    current = g.altToMain[current]
+    current = links[current]
   end
   return current
 end
@@ -458,7 +496,10 @@ function ns.SetCharacterMain(g, altName, mainName)
   if not g or not altName then return false, "invalid" end
   g.altToMain = g.altToMain or {}
   if not mainName or mainName == "" then
-    g.altToMain[altName] = nil
+    if g.altToMain[altName] ~= nil then
+      g.altToMain[altName] = nil
+      ns.InvalidateCaches()
+    end
     return true
   end
   if altName == mainName then return false, "same" end
@@ -466,24 +507,49 @@ function ns.SetCharacterMain(g, altName, mainName)
   -- Le main choisi est toujours ramene a son propre main final.
   local resolvedMain = ns.ResolveMain(g, mainName)
   if resolvedMain == altName then return false, "cycle" end
-  g.altToMain[altName] = resolvedMain
+  if g.altToMain[altName] ~= resolvedMain then
+    g.altToMain[altName] = resolvedMain
+    ns.InvalidateCaches()
+  end
   return true
+end
+
+-- Index des groupes main/rerolls, reconstruit a la demande.
+--
+-- La vue Resume appelle GetLinkedCharacters cinq fois par membre. Rebalayer
+-- g.members a chaque appel faisait croitre le cout d'un rafraichissement comme
+-- le carre du nombre de membres. L'index est donc bati une fois, puis reutilise
+-- jusqu'a la prochaine ecriture (nouveau membre, lien modifie, purge).
+local groupsRev = setmetatable({}, { __mode = "k" })
+local groupsCache = setmetatable({}, { __mode = "k" })
+
+-- Le main d'abord, puis l'ordre alphabetique : l'affichage des rerolls et les
+-- exports dependent de ce tri.
+local function SortLinked(a, b)
+  if a.isMain ~= b.isMain then return a.isMain end
+  return a.name:lower() < b.name:lower()
+end
+
+local function GetGroups(g)
+  if groupsRev[g] ~= accountingRev or not groupsCache[g] then
+    local groups = {}
+    for name, m in pairs(g.members or {}) do
+      local main = ns.ResolveMain(g, name)
+      local group = groups[main]
+      if not group then group = {}; groups[main] = group end
+      group[#group + 1] = { name = name, m = m, isMain = (name == main) }
+    end
+    for _, group in pairs(groups) do table.sort(group, SortLinked) end
+    groupsCache[g] = groups
+    groupsRev[g] = accountingRev
+  end
+  return groupsCache[g]
 end
 
 -- Tous les personnages rattaches a un main, main compris.
 function ns.GetLinkedCharacters(g, mainName)
-  mainName = ns.ResolveMain(g, mainName)
-  local list = {}
-  for name, m in pairs(g.members or {}) do
-    if ns.ResolveMain(g, name) == mainName then
-      list[#list + 1] = { name = name, m = m, isMain = (name == mainName) }
-    end
-  end
-  table.sort(list, function(a, b)
-    if a.isMain ~= b.isMain then return a.isMain end
-    return a.name:lower() < b.name:lower()
-  end)
-  return list
+  if not g then return {} end
+  return GetGroups(g)[ns.ResolveMain(g, mainName)] or {}
 end
 
 function ns.GetAltCount(g, mainName)
@@ -601,6 +667,10 @@ function ns.ScanRoster()
 
   local numTotal = GetNumGuildMembers()
   local present, seen = {}, 0
+  -- GUILD_ROSTER_UPDATE se declenche en continu. Sans comparaison, chaque
+  -- occurrence reconstruisait toute la vue Resume alors que le roster etait
+  -- le plus souvent rigoureusement identique.
+  local changed = false
 
   for i = 1, (numTotal or 0) do
     local name, rankName, rankIndex, _, _, _, note, officerNote = GetGuildRosterInfo(i)
@@ -609,11 +679,16 @@ function ns.ScanRoster()
       local m = EnsureMember(g, short)
       -- GuildCotiz utilise le nom court comme cle, mais les integrations
       -- inter-royaumes ont besoin du nom complet Personnage-Royaume.
-      m.fullName = name
-      m.rankName = rankName or m.rankName
-      m.rankIndex = rankIndex or m.rankIndex
-      if note and note ~= "" then m.note = note end
-      if officerNote and officerNote ~= "" then m.officerNote = officerNote end
+      if m.fullName ~= name then m.fullName = name; changed = true end
+      local newRank = rankName or m.rankName
+      if m.rankName ~= newRank then m.rankName = newRank; changed = true end
+      local newIndex = rankIndex or m.rankIndex
+      if m.rankIndex ~= newIndex then m.rankIndex = newIndex; changed = true end
+      if note and note ~= "" and m.note ~= note then m.note = note; changed = true end
+      if officerNote and officerNote ~= "" and m.officerNote ~= officerNote then
+        m.officerNote = officerNote
+        changed = true
+      end
       present[short] = true
       seen = seen + 1
     end
@@ -624,25 +699,30 @@ function ns.ScanRoster()
 
   for name, m in pairs(g.members) do
     if present[name] then
-      m.active = true
+      if not m.active then m.active = true; changed = true end
       -- Un retour dans la guilde annule le depart sans toucher a l'historique.
       if m.leftAt then
         m.leftAt = nil
         returns = returns + 1
+        changed = true
       end
     elseif complete then
-      m.active = false
+      if m.active then m.active = false; changed = true end
       if not m.leftAt then
         m.leftAt = time()
         departures = departures + 1
+        changed = true
       end
     end
   end
 
-  g.rosterComplete = complete
+  if g.rosterComplete ~= complete then
+    g.rosterComplete = complete
+    changed = true
+  end
   if complete then g.rosterCheckedAt = time() end
 
-  if ns.RefreshUI then ns.RefreshUI() end
+  if changed and ns.RefreshUI then ns.RefreshUI() end
   return complete, departures, returns
 end
 
@@ -693,6 +773,7 @@ function ns.PurgeFormerMember(g, name)
   end
 
   g.members[name] = nil
+  ns.InvalidateCaches()
   return true
 end
 
@@ -867,20 +948,28 @@ function ns.ScanBankLog()
     end
   end
 
+  -- "changed" couvre les horodatages realignes par le rapprochement : une ligne
+  -- deja connue mais redatee modifie la semaine comptable sans rien ajouter.
+  local touched = added > 0 or addedW > 0 or changed
+
   -- tri par date pour l'historique
-  if added > 0 or addedW > 0 or changed then
+  if touched then
     for _, m in pairs(g.members) do
       if m.deposits then table.sort(m.deposits, function(a, b) return a.t < b.t end) end
       if m.withdrawals then table.sort(m.withdrawals, function(a, b) return a.t < b.t end) end
     end
+    ns.InvalidateCaches()
   end
 
   -- Un scan qui apporte du neuf est le bon moment pour proposer ces donnees
   -- aux autres officiers : leur journal a peut-etre deja perdu ces lignes.
   if (added > 0 or addedW > 0) and ns.Sync then ns.Sync.Schedule(8) end
 
-  if ns.RefreshUI then ns.RefreshUI() end
-  return added, nil, addedW
+  -- Un journal relu a l'identique n'a rien a montrer de neuf. Le rafraichir
+  -- reconstruirait pourtant toute la guilde, ce que GUILDBANKLOG_UPDATE
+  -- declenchait plusieurs fois de suite au chargement du journal.
+  if touched and ns.RefreshUI then ns.RefreshUI() end
+  return added, nil, addedW, touched
 end
 
 -- Remet l'historique en ordre et reconstruit l'index de deduplication.
@@ -957,6 +1046,9 @@ function ns.SetDepositOverride(m, weekTs, copper)
   else
     m.depositOverrides[weekTs] = math.max(0, math.floor(tonumber(copper) or 0))
   end
+  -- Une correction manuelle peut porter sur une semaine anterieure a la
+  -- premiere saison connue : le debut de suivi est donc a recalculer.
+  ns.InvalidateCaches()
 end
 
 -- Total depose par un membre depuis son debut de suivi, corrections comprises.
@@ -1280,6 +1372,23 @@ function ns.QueryMoneyLog()
   end
 end
 
+-- Le serveur emet plusieurs GUILDBANKLOG_UPDATE rapproches pendant le
+-- chargement du journal. Les regrouper evite de scanner et de rafraichir
+-- autant de fois qu'il y a de reponses.
+local bankScanPending
+
+local function ScheduleBankScan()
+  if bankScanPending then return end
+  bankScanPending = true
+  C_Timer.After(0.2, function()
+    bankScanPending = false
+    local added, _, addedW = ns.ScanBankLog()
+    if (added or 0) > 0 or (addedW or 0) > 0 then
+      print("|cff33ff99GuildCotiz|r : " .. L("BANK_SCAN_RESULT", added or 0, addedW or 0))
+    end
+  end)
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
@@ -1314,10 +1423,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
   elseif event == "GUILDBANKLOG_UPDATE" then
     -- on scanne a chaque mise a jour (le dedoublonnage evite les doublons),
     -- ce qui capte aussi un depot fait pendant que le coffre est deja ouvert
-    local added, _, addedW = ns.ScanBankLog()
-    if (added or 0) > 0 or (addedW or 0) > 0 then
-      print("|cff33ff99GuildCotiz|r : " .. L("BANK_SCAN_RESULT", added or 0, addedW or 0))
-    end
+    ScheduleBankScan()
   end
 end)
 

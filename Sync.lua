@@ -257,6 +257,9 @@ function Sync.MergeTransactions(g, list)
       if m.deposits then table.sort(m.deposits, function(a, b) return a.t < b.t end) end
       if m.withdrawals then table.sort(m.withdrawals, function(a, b) return a.t < b.t end) end
     end
+    -- Une transaction recue d'un autre officier peut preceder la premiere
+    -- saison connue : le debut de suivi est donc a recalculer.
+    ns.InvalidateCaches()
     if ns.RefreshUI then ns.RefreshUI() end
   end
 

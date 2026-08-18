@@ -156,6 +156,7 @@ function ns.ApplyProfile(profile)
       if g.members[alt] and g.members[main] then ns.SetCharacterMain(g, alt, main) end
     end
   end
+  ns.InvalidateCaches()
   if ns.RefreshUI then ns.RefreshUI() end
   return true
 end
@@ -283,6 +284,7 @@ function ns.ResetActiveProfile()
     g.config.altRanksInitialized = false
     ns.EnsureRankRoles(g)
     g.altToMain = {}
+    ns.InvalidateCaches()
     profiles.Default = CaptureCurrentProfile()
     if ns.RefreshUI then ns.RefreshUI() end
     return true
